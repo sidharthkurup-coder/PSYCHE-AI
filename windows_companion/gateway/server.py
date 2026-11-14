@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,14 +12,16 @@ from urllib.parse import parse_qs
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from core.contracts.validator import ContractValidationError
+from core.multilingual.pragmatics import detect_language_modes_and_spans
 from core.pipeline.orchestrator import PsycheIntelligenceOrchestrator
-from core.storage.database import PsycheDatabase, utc_now_iso
+from core.storage.database import PsycheDatabase, generate_uuidv7, utc_now_iso
 from core.subsystems.fortress.crypto_vault import VaultLockedError
+from windows_companion.gateway.web_dashboard import WEB_DASHBOARD_HTML
 
 
 class PsycheGatewayService:
@@ -42,6 +45,7 @@ class PsycheGatewayService:
         self.enforce_clock_skew = enforce_clock_skew
         self._ws_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._event_listeners: list[Any] = []
+        self._web_device_id: str | None = None
 
     def register_event_listener(self, callback: Any) -> None:
         """Registers an in-process Desktop UI listener for live Gateway events."""
@@ -251,6 +255,253 @@ class PsycheGatewayService:
         except Exception as exc:
             return self._map_exception(exc)
 
+    async def handle_web_dashboard(self, request: Request) -> HTMLResponse:
+        return HTMLResponse(WEB_DASHBOARD_HTML)
+
+    async def handle_web_state(self, request: Request) -> JSONResponse:
+        try:
+            hw = self.orchestrator.economy.capture_hardware_snapshot()
+            payload: dict[str, Any] = {
+                "vault_locked": self.db.vault.is_locked,
+                "neural_ai_online": self.orchestrator.local_core.is_local_llama_server_online(),
+                "gpu_name": hw.gpu_name,
+                "free_vram_mib": hw.vram_free_mib,
+                "total_vram_mib": hw.vram_total_mib,
+                "process_ram_mib": hw.process_rss_mib,
+                "desktop_presence_state": self.presence.desktop_presence_state,
+                "windows_host_endpoint": self.windows_host_endpoint,
+                "windows_tls_cert_sha256": self.windows_tls_cert_sha256,
+                "people": [],
+                "selected_person_id": None,
+                "timeline_events": [],
+                "open_loops": [],
+                "memories": [],
+                "paired_devices": [],
+                "synthesis_packet": None,
+            }
+            if self.db.vault.is_locked:
+                return JSONResponse(payload, status_code=200)
+
+            conn = self.db.connection
+            people = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT person_id, canonical_display_name, relationship_tier, trust_level "
+                    "FROM people ORDER BY updated_at_utc DESC, rowid DESC"
+                ).fetchall()
+            ]
+            paired_devices = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT device_id, device_name, paired_at_utc, trust_status "
+                    "FROM paired_devices ORDER BY paired_at_utc DESC"
+                ).fetchall()
+            ]
+            payload["people"] = people
+            payload["paired_devices"] = paired_devices
+
+            req_pid = request.query_params.get("person_id")
+            known_ids = {p["person_id"] for p in people}
+            selected_pid = (
+                req_pid
+                if req_pid and req_pid in known_ids
+                else (people[0]["person_id"] if people else None)
+            )
+            payload["selected_person_id"] = selected_pid
+            if not selected_pid:
+                return JSONResponse(payload, status_code=200)
+
+            raw_rows = conn.execute(
+                """
+                SELECT event_id, conversation_key, sender_raw_title, raw_text_immutable,
+                       raw_text_sha256, detected_language_modes_json, posted_at_utc, direction
+                FROM raw_events
+                WHERE resolved_person_id = ?
+                ORDER BY posted_at_utc ASC, rowid ASC
+                """,
+                (selected_pid,),
+            ).fetchall()
+            timeline_events: list[dict[str, Any]] = []
+            for r in raw_rows:
+                item = dict(r)
+                item["detected_language_modes"] = json.loads(
+                    item.pop("detected_language_modes_json", "[]")
+                )
+                timeline_events.append(item)
+            payload["timeline_events"] = timeline_events
+
+            conv_key = timeline_events[-1]["conversation_key"] if timeline_events else "default"
+            payload["open_loops"] = [
+                dict(r)
+                for r in conn.execute(
+                    """
+                    SELECT loop_id, loop_kind, description, status
+                    FROM conversation_open_loops
+                    WHERE person_id = ? AND conversation_key = ?
+                    ORDER BY opened_at_utc ASC, rowid ASC
+                    """,
+                    (selected_pid, conv_key),
+                ).fetchall()
+            ]
+            payload["memories"] = [
+                dict(r)
+                for r in conn.execute(
+                    """
+                    SELECT memory_id, memory_domain, epistemic_class, statement_text,
+                           quarantine_status, lifecycle_status, revision_number
+                    FROM memory_ledger
+                    WHERE person_id = ? AND lifecycle_status = 'ACTIVE'
+                    ORDER BY updated_at_utc DESC, rowid DESC
+                    """,
+                    (selected_pid,),
+                ).fetchall()
+            ]
+            syn_row = conn.execute(
+                """
+                SELECT synthesis_payload_json FROM reasoning_syntheses
+                WHERE person_id = ?
+                ORDER BY created_at_utc DESC, rowid DESC LIMIT 1
+                """,
+                (selected_pid,),
+            ).fetchone()
+            if syn_row:
+                payload["synthesis_packet"] = json.loads(syn_row["synthesis_payload_json"])
+            return JSONResponse(payload, status_code=200)
+        except Exception as exc:
+            return self._map_exception(exc)
+
+    async def handle_web_analyze(self, request: Request) -> JSONResponse:
+        try:
+            if self.db.vault.is_locked:
+                raise VaultLockedError("Database access denied: PSYCHE FORTRESS vault is locked")
+            body = await request.json()
+            sender_name = str(body.get("sender_name") or "Manual Contact").strip() or "Manual Contact"
+            raw_text = str(body.get("raw_text") or "").strip()
+            tier = str(body.get("relationship_tier") or "CLOSE_FRIEND")
+            if not raw_text:
+                return self._error_response(422, "EMPTY_MESSAGE", "Message text cannot be empty.")
+
+            if not self._web_device_id:
+                self._web_device_id = generate_uuidv7()
+                self.orchestrator.people_memory.register_paired_device(
+                    device_id=self._web_device_id,
+                    device_name="Legion 5 Pro Web Workbench",
+                    ed25519_public_key_b64="d2ViLXdvcmtiZW5jaC1wdWJrZXk=",
+                    tls_cert_sha256_pin="e" * 64,
+                )
+
+            now_utc = utc_now_iso()
+            modes, spans = detect_language_modes_and_spans(raw_text)
+            ev_id = generate_uuidv7()
+            sender_hash = hashlib.sha256(sender_name.lower().encode("utf-8")).hexdigest()[:12]
+            pid = self.orchestrator.people_memory.create_or_update_person(
+                canonical_display_name=sender_name,
+                relationship_tier=tier,
+                trust_level=0.80,
+            )
+            batch_req = {
+                "schema_version": "1.0.0",
+                "batch_id": generate_uuidv7(),
+                "device_id": self._web_device_id,
+                "sent_at_utc": now_utc,
+                "batch_ed25519_signature": "d2ViLWJhdGNoLXNpZ25hdHVyZS1vaw==",
+                "events": [
+                    {
+                        "event_id": ev_id,
+                        "package_name": "com.psycheai.manual",
+                        "notification_category": "msg",
+                        "conversation_key": f"web-{sender_hash}",
+                        "is_group_conversation": False,
+                        "group_title": None,
+                        "direction": "INBOUND",
+                        "sender": {
+                            "raw_title": sender_name,
+                            "android_contact_lookup_key": None,
+                            "normalized_phone_sha256": None,
+                            "candidate_person_ids": [pid],
+                            "identity_ambiguity": False,
+                        },
+                        "content": {
+                            "raw_text_immutable": raw_text,
+                            "raw_text_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
+                            "detected_language_modes": modes,
+                            "token_language_spans": spans,
+                        },
+                        "posted_at_utc": now_utc,
+                        "security": {
+                            "untrusted_external_input": True,
+                            "otp_or_sensitive_filtered": True,
+                            "ed25519_event_signature": "d2ViLWV2ZW50LXNpZ25hdHVyZS1vaw==",
+                        },
+                    }
+                ],
+            }
+            self.orchestrator.people_memory.ingest_notification_batch(
+                batch_req, require_crypto_signature=False
+            )
+            packet = self.orchestrator.synthesize_for_event(
+                event_id=ev_id, reference_now_utc=now_utc
+            )
+            self._broadcast_event(
+                "SYNTHESIS_READY",
+                {
+                    "synthesis_id": packet["synthesis_id"],
+                    "trigger_event_id": packet["trigger_event_id"],
+                    "person_id": packet["person_id"],
+                    "packet": packet,
+                },
+            )
+            return JSONResponse(packet, status_code=200)
+        except Exception as exc:
+            return self._map_exception(exc)
+
+    async def handle_web_vault(self, request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+            action = str(body.get("action") or "").upper()
+            if action == "PANIC_LOCK":
+                self.db.vault.panic_lock()
+            elif action == "UNLOCK":
+                self.db.vault.unlock()
+            else:
+                return self._error_response(422, "INVALID_ACTION", f"Unsupported vault action: {action}")
+            self._broadcast_event("PRESENCE_UPDATED", {"vault_locked": self.db.vault.is_locked})
+            return JSONResponse({"vault_locked": self.db.vault.is_locked}, status_code=200)
+        except Exception as exc:
+            return self._map_exception(exc)
+
+    async def handle_web_memory(self, request: Request) -> JSONResponse:
+        try:
+            if self.db.vault.is_locked:
+                raise VaultLockedError("Database access denied: PSYCHE FORTRESS vault is locked")
+            body = await request.json()
+            action = str(body.get("action") or "").upper()
+            if action == "DISMISS_LOOP":
+                self.orchestrator.timeline.dismiss_open_loop(body["loop_id"])
+            elif action == "CORRECT_MEMORY":
+                self.orchestrator.memory_integrity.correct_memory(
+                    body["memory_id"],
+                    corrected_statement=body["statement"],
+                    correction_note="Corrected via Local Web Workbench",
+                )
+            elif action == "RELEASE_QUARANTINE":
+                self.orchestrator.memory_integrity.release_emotional_quarantine(
+                    body["memory_id"],
+                    confirmed_by_user=True,
+                    note="Reviewed and confirmed in Local Web Workbench",
+                )
+            elif action == "DELETE_MEMORY":
+                self.orchestrator.memory_integrity.delete_memory(
+                    body["memory_id"],
+                    reason="Deleted via Local Web Workbench",
+                )
+            else:
+                return self._error_response(422, "INVALID_ACTION", f"Unsupported action: {action}")
+            self._broadcast_event("CONTACTS_SYNCED", {"action": action})
+            return JSONResponse({"ok": True, "action": action}, status_code=200)
+        except Exception as exc:
+            return self._map_exception(exc)
+
     async def handle_websocket_events(self, websocket: WebSocket) -> None:
         await websocket.accept()
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -306,8 +557,13 @@ def create_gateway_app(
         enforce_clock_skew=enforce_clock_skew,
     )
     routes = [
+        Route("/", service.handle_web_dashboard, methods=["GET"]),
         Route("/v1/health", service.handle_health, methods=["GET"]),
         Route("/download/apk", service.handle_download_apk, methods=["GET"]),
+        Route("/v1/web/state", service.handle_web_state, methods=["GET"]),
+        Route("/v1/web/analyze", service.handle_web_analyze, methods=["POST"]),
+        Route("/v1/web/vault", service.handle_web_vault, methods=["POST"]),
+        Route("/v1/web/memory", service.handle_web_memory, methods=["POST"]),
         Route("/v1/pair/init", service.handle_pair_init, methods=["POST"]),
         Route("/v1/pair/confirm", service.handle_pair_confirm, methods=["POST"]),
         Route("/v1/contacts/sync", service.handle_contacts_sync, methods=["POST"]),

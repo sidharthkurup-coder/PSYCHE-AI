@@ -203,6 +203,28 @@ def _start_uvicorn_thread(
     return server, thread
 
 
+def _start_localhost_web_thread(
+    app: Any,
+    *,
+    port: int = 8080,
+) -> tuple[uvicorn.Server, threading.Thread]:
+    """Starts a loopback-only HTTP workbench server for clean browser viewing."""
+    config = uvicorn.Config(
+        app=app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, name="PsycheLocalhostWeb", daemon=True)
+    thread.start()
+    deadline = time.time() + 5.0
+    while not server.started and thread.is_alive() and time.time() < deadline:
+        time.sleep(0.1)
+    return server, thread
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Launch PSYCHE AI live desktop stack.")
     parser.add_argument(
@@ -211,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Start services, verify health & neural AI, then exit cleanly.",
     )
     parser.add_argument("--port", type=int, default=8443, help="HTTPS Gateway port (default 8443).")
+    parser.add_argument("--web-port", type=int, default=8080, help="Loopback HTTP Web UI port (default 8080).")
     parser.add_argument("--rotate-certs", action="store_true", help="Force regenerate LAN TLS certs.")
     args = parser.parse_args(argv)
 
@@ -246,9 +269,14 @@ def main(argv: list[str] | None = None) -> int:
         cert_bundle,
         port=args.port,
     )
+    web_server, web_thread = _start_localhost_web_thread(
+        gateway_app,
+        port=args.web_port,
+    )
 
     print("============================================================")
     print("  PSYCHE AI — Sovereign Local System ACTIVE")
+    print(f"  Localhost Web UI: http://localhost:{args.web_port}")
     print(f"  LAN Gateway URL : {lan_url}")
     print(f"  APK Download URL: {lan_url}/download/apk")
     print(f"  TLS SHA-256 Pin : {tls_sha256}")
@@ -258,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.headless_check:
             time.sleep(0.5)
-            return 0 if gateway_thread.is_alive() else 1
+            return 0 if (gateway_thread.is_alive() and web_thread.is_alive()) else 1
         return launch_desktop_companion(
             db=db,
             orchestrator=orchestrator,
@@ -267,7 +295,9 @@ def main(argv: list[str] | None = None) -> int:
             gateway_tls_sha256=tls_sha256,
         )
     finally:
+        web_server.should_exit = True
         uvicorn_server.should_exit = True
+        web_thread.join(timeout=2.0)
         gateway_thread.join(timeout=2.0)
         db.close()
         if started_llama_here:
