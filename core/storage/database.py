@@ -225,7 +225,13 @@ class PsycheDatabase:
         sql_blocks = re.findall(r"```sql\r?\n(.*?)```", md_content, re.DOTALL)
         if not sql_blocks:
             raise RuntimeError("Could not locate SQL DDL block in DATA_MODEL.md")
-        self._conn.executescript(sql_blocks[0])
+        idempotent_sql = re.sub(
+            r"\bCREATE\s+(TABLE|VIRTUAL\s+TABLE|UNIQUE\s+INDEX|INDEX|TRIGGER|VIEW)\s+(?!IF\s+NOT\s+EXISTS\b)",
+            r"CREATE \1 IF NOT EXISTS ",
+            sql_blocks[0],
+            flags=re.IGNORECASE,
+        )
+        self._conn.executescript(idempotent_sql)
         self._conn.commit()
 
     def _load_vectors_if_present(self) -> None:
