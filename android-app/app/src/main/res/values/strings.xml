@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">PSYCHE AI Companion</string>
+    <string name="notification_channel_name">PSYCHE Encrypted Sync</string>
+</resources>

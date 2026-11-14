@@ -1,9 +1,9 @@
 # PSYCHE AI — Legion 5 Pro Synchronized Status Ledger
 
 > **Machine Owner**: Legion 5 Pro (Primary Architect, Orchestrator & Core Intelligence Owner)  
-> **Active Branch**: `legion/phase5-windows-desktop-ui` (branched from verified `legion/phase4-windows-gateway-mtls` @ `043ed12`)  
+> **Active Branch**: `legion/phase6-android-companion` (branched from verified `legion/phase5-windows-desktop-ui` @ `1babf6b`)  
 > **Protected Integration Branch**: `main` (Commit `06e9ed72c6eb8cbabb92552dc217915d94ad5e65`)  
-> **Last Updated**: `2026-11-15T03:33:00+05:30`
+> **Last Updated**: `2026-11-15T03:39:00+05:30`
 
 ---
 
@@ -115,7 +115,19 @@ Specification: [docs/specs/PHASE5_SPECIFICATION.md](../specs/PHASE5_SPECIFICATIO
 
 ---
 
-## 6. Coordination Notes for Unified Track
+## 6. Phase 6 — Native Android Companion & Cryptographic Simulator (`android-app/`, `android_app_simulator/`) — COMPLETE & VERIFIED
+
+Specification: [docs/specs/PHASE6_SPECIFICATION.md](../specs/PHASE6_SPECIFICATION.md)
+
+| Milestone / Subsystem | Module Path | Status | Verification Summary |
+| :--- | :--- | :--- | :--- |
+| **6.1 Native Kotlin + Jetpack Compose Android Project** | `android-app/` | **COMPLETED & STATIC-AUDITED** | Zero-backup/zero-cleartext manifest (`allowBackup="false"`, `usesCleartextTraffic="false"`), zero forbidden permissions (`SEND_SMS`, `READ_SMS`, `CALL_PHONE`, `BIND_ACCESSIBILITY_SERVICE`), `SensitiveNotificationFilter.kt`, `FortressKeystoreManager.kt`, `PsycheNotificationListenerService.kt`, `ContactResolver.kt`, `EncryptedOfflineQueue.kt`, `CompanionSyncClient.kt`, `MainActivity.kt` (clipboard-only; Gradle build pending Android SDK installation) |
+| **6.2 Cryptographic Python Android Companion Simulator** | `android_app_simulator/client.py` | **COMPLETED & VERIFIED** | Full X25519 + Ed25519 + 6-digit SAS pairing, cross-script contact sync, pre-persistence OTP drop (`is_sensitive_or_otp_notification`), AES-256-GCM SQLite `offline_queue`, `HOLD_UNTIL_UNLOCKED` under `423 VAULT_LOCKED`, and automatic flush on unlock |
+| **6.3 Phase 6 Static & E2E Simulator Tests** | `tests/test_phase6_android_companion_and_simulator.py` | **COMPLETED & VERIFIED** | Static manifest/source security audit + OTP drop isolation + AES-GCM ciphertext offline queue & post-unlock delivery; full suite **52/52 passed** |
+
+---
+
+## 7. Coordination Notes for Unified Track
 
 1. **Contract Conformance Unchanged & Ready**:
    - `/contracts/v1/*.schema.json` remains bit-for-bit identical to `origin/main` (`06e9ed7`).
