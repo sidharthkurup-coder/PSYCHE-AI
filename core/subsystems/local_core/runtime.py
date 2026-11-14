@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -151,16 +152,37 @@ class LlamaServerProcessManager:
         self.port = int(port)
         self.endpoint = endpoint
         self.binary_path = Path(binary_path) if binary_path is not None else None
-        self.model_path = Path(model_path) if model_path is not None else None
+        self.model_path = Path(model_path) if model_path is not None else self.find_default_model_path()
         self.ctx_size = int(ctx_size)
         self.n_gpu_layers = int(n_gpu_layers)
         self.threads = int(threads)
         self._process: subprocess.Popen[bytes] | None = None
 
+    @staticmethod
+    def default_install_dir() -> Path:
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "PsycheAI"
+        return Path.home() / "AppData" / "Local" / "PsycheAI"
+
+    def find_default_model_path(self) -> Path | None:
+        models_dir = self.default_install_dir() / "models"
+        for name in (
+            "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+            "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        ):
+            cand = models_dir / name
+            if cand.is_file():
+                return cand
+        return None
+
     def find_llama_server_binary(self) -> Path | None:
         """Locates an installed `llama-server` executable if present locally."""
         if self.binary_path is not None and self.binary_path.is_file():
             return self.binary_path
+        app_bin = self.default_install_dir() / "bin" / "llama-server.exe"
+        if app_bin.is_file():
+            return app_bin
         for name in ("llama-server", "llama-server.exe"):
             found = shutil.which(name)
             if found:
@@ -284,14 +306,17 @@ class PsycheLocalCoreRuntime:
         economy: PsycheEconomyGovernor | None = None,
         pragmatics: MultilingualPragmaticsEngine | None = None,
         local_llama_endpoint: str = DEFAULT_LLAMA_ENDPOINT,
-        prefer_llama_server_if_online: bool = False,
+        prefer_llama_server_if_online: bool | None = None,
     ) -> None:
         self.economy = economy or PsycheEconomyGovernor()
         self.pragmatics = pragmatics or MultilingualPragmaticsEngine()
         # Verify loopback-only constraint immediately
         self.economy.assert_local_only_execution(local_llama_endpoint)
         self.local_llama_endpoint = local_llama_endpoint.rstrip("/")
-        self.prefer_llama_server_if_online = prefer_llama_server_if_online
+        if prefer_llama_server_if_online is None:
+            self.prefer_llama_server_if_online = os.environ.get("PSYCHE_ENABLE_LLAMA", "0") == "1"
+        else:
+            self.prefer_llama_server_if_online = prefer_llama_server_if_online
 
     def is_local_llama_server_online(self) -> bool:
         """Checks if a local llama.cpp HTTP server is listening on 127.0.0.1."""

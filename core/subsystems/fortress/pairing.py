@@ -191,7 +191,9 @@ def ed25519_sign(private_key_32b: bytes, message: bytes) -> bytes:
 
 
 def ed25519_verify(public_key_32b: bytes, message: bytes, signature_64b: bytes) -> bool:
-    """Verifies a 64-byte Ed25519 signature against a 32-byte raw public key and message."""
+    """Verifies a 64-byte Ed25519 signature against a raw 32-byte or X.509 SPKI public key."""
+    if len(public_key_32b) == 44 and public_key_32b.startswith(b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00"):
+        public_key_32b = public_key_32b[-32:]
     if len(public_key_32b) != 32 or len(signature_64b) != 64:
         return False
     lib = _get_libcrypto()
@@ -231,6 +233,8 @@ def generate_x25519_keypair() -> tuple[bytes, bytes]:
 
 def x25519_derive_shared_secret(private_key_32b: bytes, peer_public_key_32b: bytes) -> bytes:
     """Computes the 32-byte X25519 Diffie-Hellman shared secret."""
+    if len(peer_public_key_32b) == 44 and peer_public_key_32b.startswith(b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x6e\x03\x21\x00"):
+        peer_public_key_32b = peer_public_key_32b[-32:]
     if len(private_key_32b) != 32 or len(peer_public_key_32b) != 32:
         raise ValueError("X25519 keys must be 32 bytes")
     lib = _get_libcrypto()

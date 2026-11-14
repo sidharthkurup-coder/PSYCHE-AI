@@ -6,9 +6,31 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
+import socket
 import ssl
 import subprocess
 from typing import Any
+
+
+def detect_lan_ipv4() -> str:
+    """Best-effort detection of the active Windows LAN IPv4 address for phone pairing."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.2)
+        sock.connect(("10.255.255.255", 1))
+        ip = sock.getsockname()[0]
+        sock.close()
+        if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+            return ip
+    except OSError:
+        pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                return ip
+    except OSError:
+        pass
+    return "127.0.0.1"
 
 
 def find_openssl_binary() -> str:
@@ -115,6 +137,11 @@ def provision_mtls_certificates(
                 f"DNS.1 = {common_name}",
                 "DNS.2 = localhost",
                 "IP.1 = 127.0.0.1",
+                *(
+                    [f"IP.2 = {lan_ip}"]
+                    if (lan_ip := detect_lan_ipv4()) != "127.0.0.1"
+                    else []
+                ),
             ]
         ),
         encoding="utf-8",

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -100,9 +102,25 @@ class PsycheGatewayService:
                 "free_vram_mib": hw.vram_free_mib,
                 "total_vram_mib": hw.vram_total_mib,
                 "process_ram_mib": hw.process_rss_mib,
+                "neural_ai_online": self.orchestrator.local_core.is_local_llama_server_online(),
                 "external_providers_enabled": False,
             }
         )
+
+    async def handle_download_apk(self, request: Request) -> JSONResponse | FileResponse:
+        local_app = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        apk_candidates = [
+            local_app / "PsycheAI" / "PSYCHE-AI-Companion.apk",
+            Path.home() / "Desktop" / "PSYCHE-AI-Companion.apk",
+        ]
+        for apk_path in apk_candidates:
+            if apk_path.is_file():
+                return FileResponse(
+                    str(apk_path),
+                    media_type="application/vnd.android.package-archive",
+                    filename="PSYCHE-AI-Companion.apk",
+                )
+        return self._error_response(404, "APK_NOT_FOUND", "Android APK has not been built yet.")
 
     async def handle_pair_init(self, request: Request) -> JSONResponse:
         try:
@@ -289,6 +307,7 @@ def create_gateway_app(
     )
     routes = [
         Route("/v1/health", service.handle_health, methods=["GET"]),
+        Route("/download/apk", service.handle_download_apk, methods=["GET"]),
         Route("/v1/pair/init", service.handle_pair_init, methods=["POST"]),
         Route("/v1/pair/confirm", service.handle_pair_confirm, methods=["POST"]),
         Route("/v1/contacts/sync", service.handle_contacts_sync, methods=["POST"]),

@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import sys
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -121,18 +122,28 @@ def mask_pii_text(text: str, *, is_message_body: bool = False) -> str:
 class PsycheDesktopMainWindow(QMainWindow):
     """Main Windows 11 Desktop Companion Workbench for PSYCHE AI."""
 
+    gateway_event_signal = Signal(dict)
+
     def __init__(
         self,
         *,
         db: PsycheDatabase,
         orchestrator: PsycheIntelligenceOrchestrator | None = None,
         gateway_service: Any | None = None,
+        gateway_lan_url: str | None = None,
+        gateway_tls_sha256: str | None = None,
         idle_timeout_ms: int = 300_000,
     ) -> None:
         super().__init__()
         self.db = db
         self.orchestrator = orchestrator or PsycheIntelligenceOrchestrator(db=db)
         self.gateway_service = gateway_service
+        self.gateway_lan_url = gateway_lan_url or (
+            gateway_service.windows_host_endpoint if gateway_service is not None else "https://127.0.0.1:8443"
+        )
+        self.gateway_tls_sha256 = gateway_tls_sha256 or (
+            gateway_service.windows_tls_cert_sha256 if gateway_service is not None else ""
+        )
         self.privacy_blur_enabled: bool = False
         self.current_person_id: str | None = None
         self.current_synthesis_packet: dict[str, Any] | None = None
@@ -152,6 +163,7 @@ class PsycheDesktopMainWindow(QMainWindow):
         )
 
         self._build_ui()
+        self.gateway_event_signal.connect(self._handle_gateway_event_on_ui_thread)
 
         if self.gateway_service is not None and hasattr(
             self.gateway_service, "register_event_listener"
@@ -297,6 +309,19 @@ class PsycheDesktopMainWindow(QMainWindow):
         mem_layout.addLayout(mem_btn_row)
         self.inspector_tabs.addTab(mem_tab, "Memory Integrity Ledger")
 
+        # Phone Pairing & Neural AI tab
+        pair_tab = QWidget()
+        pair_layout = QVBoxLayout(pair_tab)
+        self.pairing_info_view = QTextEdit()
+        self.pairing_info_view.setReadOnly(True)
+        pair_layout.addWidget(self.pairing_info_view, stretch=1)
+        pair_btn_row = QHBoxLayout()
+        self.generate_pair_button = QPushButton("Generate / Refresh Phone Pairing Session")
+        self.generate_pair_button.clicked.connect(self._on_generate_pairing_clicked)
+        pair_btn_row.addWidget(self.generate_pair_button)
+        pair_layout.addLayout(pair_btn_row)
+        self.inspector_tabs.addTab(pair_tab, "Phone Pairing & Neural AI")
+
         right_layout.addWidget(self.inspector_tabs, stretch=3)
 
         # Reply Review Studio (Zero Auto-Send)
@@ -339,6 +364,10 @@ class PsycheDesktopMainWindow(QMainWindow):
         self.locked_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.locked_banner.setStyleSheet("font-size: 18px; font-weight: bold; color: #F85149;")
         locked_layout.addWidget(self.locked_banner)
+        self.unlock_vault_button = QPushButton("Unlock Vault (Windows DPAPI)")
+        self.unlock_vault_button.setObjectName("approveButton")
+        self.unlock_vault_button.clicked.connect(self._on_unlock_vault_clicked)
+        locked_layout.addWidget(self.unlock_vault_button, alignment=Qt.AlignmentFlag.AlignCenter)
         locked_layout.addStretch()
         self.view_stack.addWidget(locked_page)
 
@@ -364,12 +393,19 @@ class PsycheDesktopMainWindow(QMainWindow):
                 self.load_synthesis_packet(saved_packet)
 
     def _on_gateway_event(self, event_msg: dict[str, Any]) -> None:
+        """Routes Gateway events safely onto the Qt main UI thread."""
+        if QThread.currentThread() == self.thread():
+            self._handle_gateway_event_on_ui_thread(event_msg)
+        else:
+            self.gateway_event_signal.emit(event_msg)
+
+    def _handle_gateway_event_on_ui_thread(self, event_msg: dict[str, Any]) -> None:
         """Refreshes desktop panes automatically when Android Companion hits the Gateway."""
         if self.db.vault.is_locked:
             return
         etype = event_msg.get("event_type")
         payload = event_msg.get("payload", {})
-        if etype in {"CONTACTS_SYNCED", "NOTIFICATIONS_INGESTED", "SYNTHESIS_REVIEWED"}:
+        if etype in {"DEVICE_PAIRED", "CONTACTS_SYNCED", "NOTIFICATIONS_INGESTED", "SYNTHESIS_REVIEWED", "PRESENCE_UPDATED"}:
             self.refresh_all()
         elif etype == "SYNTHESIS_READY":
             packet = payload.get("packet")
@@ -380,6 +416,54 @@ class PsycheDesktopMainWindow(QMainWindow):
                 self.load_synthesis_packet(packet)
             else:
                 self.refresh_all()
+
+    def _on_unlock_vault_clicked(self) -> None:
+        self.db.vault.unlock()
+        self.refresh_all()
+
+    def _on_generate_pairing_clicked(self) -> None:
+        if self.db.vault.is_locked:
+            return
+        self._active_pairing_qr = self.orchestrator.people_memory.pairing.initiate_pairing_session(
+            windows_host_endpoint=self.gateway_lan_url,
+            windows_tls_cert_sha256=self.gateway_tls_sha256 or ("a" * 64),
+            ttl_seconds=600,
+        )
+        self._refresh_pairing_and_ai_panel()
+
+    def _refresh_pairing_and_ai_panel(self) -> None:
+        if not hasattr(self, "pairing_info_view") or self.db.vault.is_locked:
+            return
+        ai_online = self.orchestrator.local_core.is_local_llama_server_online()
+        model_path = self.orchestrator.local_core.local_llama_endpoint
+        paired_rows = self.db.connection.execute(
+            "SELECT device_name, device_id, paired_at_utc, trust_status FROM paired_devices ORDER BY paired_at_utc DESC"
+        ).fetchall()
+        lines = [
+            f"WINDOWS GATEWAY URL (Phone Endpoint): {self.gateway_lan_url}",
+            f"ANDROID APK WIFI DOWNLOAD URL: {self.gateway_lan_url}/download/apk",
+            f"TLS 1.3 CERT SHA-256 PIN: {self.gateway_tls_sha256 or '(local test mode)'}",
+            "",
+            f"LOCAL NEURAL AI STATUS: {'ONLINE — llama-server.exe' if ai_online else 'OFFLINE (Tier-0 Analytical Fallback Active)'}",
+            f"LOCAL NEURAL AI ENDPOINT: {model_path}",
+            f"EXTERNAL CLOUD PROVIDERS: DISABLED ($0.00 spend)",
+            "",
+            f"PAIRED ANDROID DEVICES ({len(paired_rows)}):",
+        ]
+        if paired_rows:
+            for r in paired_rows:
+                lines.append(f"  - {r['device_name']} [{r['trust_status']}] (id={r['device_id'][:12]}..., paired={r['paired_at_utc']})")
+        else:
+            lines.append("  - None paired yet. Open PSYCHE AI Companion on your phone, enter the Gateway URL above, and tap 'Pair & Connect'.")
+        qr = getattr(self, "_active_pairing_qr", None)
+        if qr:
+            lines.extend([
+                "",
+                "ACTIVE PAIRING SESSION:",
+                f"  - Session ID: {qr['pairing_session_id']}",
+                f"  - Expires UTC: {qr['expires_at_utc']}",
+            ])
+        self.pairing_info_view.setPlainText("\n".join(lines))
 
     def _on_vault_locked_callback(self) -> None:
         self._show_locked_overlay()
@@ -414,13 +498,16 @@ class PsycheDesktopMainWindow(QMainWindow):
         self.reset_idle_timer()
 
         hw = self.orchestrator.economy.capture_hardware_snapshot()
+        ai_online = self.orchestrator.local_core.is_local_llama_server_online()
+        ai_label = "NEURAL AI: ONLINE" if ai_online else "AI: TIER-0 FALLBACK"
         self.economy_label.setText(
             f"{hw.gpu_name} Free VRAM: {hw.vram_free_mib:.0f} MiB / "
             f"{hw.vram_total_mib:.0f} MiB | Process RSS: {hw.process_rss_mib:.1f} MiB"
         )
         self.status_badge.setText(
-            f"LOCAL VAULT: UNLOCKED | PRESENCE: {self.orchestrator.presence.desktop_presence_state} | CLOUD: DISABLED ($0.00)"
+            f"LOCAL VAULT: UNLOCKED | {ai_label} | PRESENCE: {self.orchestrator.presence.desktop_presence_state} | CLOUD: $0.00"
         )
+        self._refresh_pairing_and_ai_panel()
 
         # Populate contact list
         prev_pid = self.current_person_id
@@ -818,19 +905,33 @@ def launch_desktop_companion(
     key_file_path: str = "psyche_master.key.dpapi",
     vector_path: str = "psyche_vectors.npy",
     offscreen: bool = False,
+    db: PsycheDatabase | None = None,
+    orchestrator: PsycheIntelligenceOrchestrator | None = None,
+    gateway_service: Any | None = None,
+    gateway_lan_url: str | None = None,
+    gateway_tls_sha256: str | None = None,
 ) -> int:
     """Entrypoint for launching the Windows 11 PySide6 Desktop Companion."""
     if offscreen:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = QApplication.instance() or QApplication(sys.argv)
-    vault = PsycheFortressVaultFactory.unlock(key_file_path=key_file_path)
-    db = PsycheDatabase(db_path=db_path, vault=vault, vector_path=vector_path)
-    win = PsycheDesktopMainWindow(db=db)
+    owns_db = db is None
+    if db is None:
+        vault = PsycheFortressVaultFactory.unlock(key_file_path=key_file_path)
+        db = PsycheDatabase(db_path=db_path, vault=vault, vector_path=vector_path)
+    win = PsycheDesktopMainWindow(
+        db=db,
+        orchestrator=orchestrator,
+        gateway_service=gateway_service,
+        gateway_lan_url=gateway_lan_url,
+        gateway_tls_sha256=gateway_tls_sha256,
+    )
     win.show()
     try:
         return app.exec()
     finally:
-        db.close()
+        if owns_db:
+            db.close()
 
 
 class PsycheFortressVaultFactory:

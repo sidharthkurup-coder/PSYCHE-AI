@@ -8,7 +8,6 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 
 /**
  * Resolves Android ContactsContract entries into privacy-preserving ContactSyncRequest batches
@@ -96,7 +95,7 @@ class ContactResolver(
         ed25519PrivateKey: java.security.PrivateKey,
     ): JSONObject {
         val nowUtc = DateTimeFormatter.ISO_INSTANT.withZone(ZoneOffset.UTC).format(Instant.now())
-        val syncBatchId = UUID.randomUUID().toString()
+        val syncBatchId = keystoreManager.generateUuidV7()
         val contactsArray = JSONArray()
         contacts.forEach { c ->
             contactsArray.put(

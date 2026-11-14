@@ -6,13 +6,15 @@ import android.service.notification.StatusBarNotification
 import com.psycheai.companion.security.FortressKeystoreManager
 import com.psycheai.companion.security.SensitiveNotificationFilter
 import com.psycheai.companion.storage.EncryptedOfflineQueue
+import com.psycheai.companion.sync.CompanionSyncClient
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.UUID
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Passive NotificationListenerService constrained strictly to allowlisted messaging packages.
@@ -23,16 +25,25 @@ class PsycheNotificationListenerService : NotificationListenerService() {
     companion object {
         val droppedSensitiveCounter = AtomicInteger(0)
         val capturedEventCounter = AtomicInteger(0)
+        val deliveredEventCounter = AtomicInteger(0)
+        val lastSyncStatus = AtomicReference("Listening passively for allowlisted notifications.")
         const val REQUIRES_USER_REVIEW = true
         const val AUTO_SEND_PERMITTED = false
+        private val VALID_CATEGORIES = setOf("msg", "call", "email", "social", "system_allowed")
     }
 
     private lateinit var offlineQueue: EncryptedOfflineQueue
     private val keystoreManager = FortressKeystoreManager()
+    private val syncExecutor = Executors.newSingleThreadExecutor()
 
     override fun onCreate() {
         super.onCreate()
         offlineQueue = EncryptedOfflineQueue(applicationContext, keystoreManager)
+    }
+
+    override fun onDestroy() {
+        syncExecutor.shutdown()
+        super.onDestroy()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -59,21 +70,24 @@ class PsycheNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        val eventId = UUID.randomUUID().toString()
-        val batchId = UUID.randomUUID().toString()
+        val eventId = keystoreManager.generateUuidV7()
+        val batchId = keystoreManager.generateUuidV7()
         val nowUtc = DateTimeFormatter.ISO_INSTANT.withZone(ZoneOffset.UTC).format(Instant.now())
-        val convKey = sbn.key ?: "$pkg:${keystoreManager.sha256Hex(title).take(12)}"
-        val sha256 = keystoreManager.sha256Hex(body)
         val isGroup = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
         val convTitle = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+        val threadLabel = if (isGroup && !convTitle.isNullOrBlank()) convTitle else title
+        val convKey = "$pkg:${keystoreManager.sha256Hex(threadLabel).take(16)}"
+        val sha256 = keystoreManager.sha256Hex(body)
+        val rawCategory = sbn.notification.category
+        val validCategory = if (rawCategory in VALID_CATEGORIES) rawCategory!! else "msg"
 
         val eventObj = JSONObject().apply {
             put("event_id", eventId)
             put("package_name", pkg)
-            put("notification_category", sbn.notification.category ?: "msg")
+            put("notification_category", validCategory)
             put("conversation_key", convKey)
             put("is_group_conversation", isGroup)
-            put("group_title", if (isGroup) convTitle else JSONObject.NULL)
+            put("group_title", if (isGroup && !convTitle.isNullOrBlank()) convTitle else JSONObject.NULL)
             put("direction", "INBOUND")
             put(
                 "sender",
@@ -108,9 +122,6 @@ class PsycheNotificationListenerService : NotificationListenerService() {
         val batchPayload = JSONObject().apply {
             put("schema_version", "1.0.0")
             put("batch_id", batchId)
-            put("event_requires_signing", true)
-            put("requires_user_review", REQUIRES_USER_REVIEW)
-            put("auto_send_permitted", AUTO_SEND_PERMITTED)
             put("events", JSONArray().put(eventObj))
         }
 
@@ -120,6 +131,39 @@ class PsycheNotificationListenerService : NotificationListenerService() {
             syncState = "PENDING",
         )
         capturedEventCounter.incrementAndGet()
+        syncExecutor.execute { flushIfPaired() }
+    }
+
+    private fun flushIfPaired() {
+        val state = keystoreManager.loadPairingState(applicationContext)
+        val identity = state.identity
+        if (!state.paired || identity == null) {
+            lastSyncStatus.set("Queued encrypted locally (pair with Windows PC to sync).")
+            return
+        }
+        runCatching {
+            val client = CompanionSyncClient.forGateway(
+                baseUrl = state.gatewayUrl,
+                pinnedWindowsSha256 = state.windowsTlsSha256,
+                keystoreManager = keystoreManager,
+            )
+            val ackedIds = client.flushOfflineQueueDetailed(
+                queue = offlineQueue,
+                deviceId = identity.deviceId,
+                ed25519PrivateKey = identity.ed25519PrivateKey,
+            )
+            ackedIds.forEach { evId ->
+                runCatching { client.requestSynthesisForEvent(evId) }
+            }
+            if (ackedIds.isNotEmpty()) {
+                deliveredEventCounter.addAndGet(ackedIds.size)
+                lastSyncStatus.set("Synced ${ackedIds.size} notification(s) to Legion 5 Pro.")
+            } else {
+                lastSyncStatus.set("Queued offline (Windows unreachable or Vault locked).")
+            }
+        }.onFailure { err ->
+            lastSyncStatus.set("Queued offline: ${err.message ?: err.javaClass.simpleName}")
+        }
     }
 
     private fun detectPrimaryScriptMode(text: String): String {
