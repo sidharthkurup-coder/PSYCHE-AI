@@ -1,9 +1,9 @@
 # PSYCHE AI — Legion 5 Pro Synchronized Status Ledger
 
 > **Machine Owner**: Legion 5 Pro (Primary Architect, Orchestrator & Core Intelligence Owner)  
-> **Active Branch**: `legion/phase2-intelligence-local-core` (branched from verified `legion/phase1-memory-timeline` @ `8ba518a`)  
+> **Active Branch**: `legion/phase3-core-fortress-presence-eval` (branched from verified `legion/phase2-intelligence-local-core` @ `36ecbdc`)  
 > **Protected Integration Branch**: `main` (Commit `06e9ed72c6eb8cbabb92552dc217915d94ad5e65`)  
-> **Last Updated**: `2026-11-15T02:34:00+05:30`
+> **Last Updated**: `2026-11-15T03:15:00+05:30`
 
 ---
 
@@ -60,7 +60,38 @@ Phase 1 underwent independent security and QA adversarial verification prior to 
 
 ---
 
-## 3. Coordination Notes for Lenovo LOQ (Android Track)
+## 3. Completed & Verified Phase 3 Milestones (`legion/phase3-core-fortress-presence-eval`)
+
+Specification: [docs/specs/PHASE3_SPECIFICATION.md](../specs/PHASE3_SPECIFICATION.md)
+
+| Milestone / Subsystem | Module Path | Status | Verification Summary |
+| :--- | :--- | :--- | :--- |
+| **3.1 PSYCHE FORTRESS Cryptographic Pairing & Replay Guard** | `core/subsystems/fortress/pairing.py`, `core/pillars/people_memory/engine.py` | **COMPLETED & VERIFIED** | Native OpenSSL `X25519` + `HKDF-SHA256` 6-digit SAS + `Ed25519` verification, `+-120s` clock skew & replay `batch_id` rejection |
+| **3.2 PSYCHE PRESENCE State & Interruption Triage** | `core/subsystems/presence/engine.py` | **COMPLETED & VERIFIED** | `PresenceHeartbeatRequest`/`Response` signed verification (including `VAULT_LOCKED` -> `HOLD_UNTIL_UNLOCKED` hold override) & urgency triage |
+| **3.3 PSYCHE KNOWLEDGE VAULT & Research Evidence Rigor** | `core/subsystems/knowledge_vault/engine.py`, `core/subsystems/research_intel/engine.py`, `core/storage/database.py` | **COMPLETED & VERIFIED** | CRUD + RAM/disk vector zeroization on delete, hybrid semantic search across 7 modes, citations/limitations, multi-hop cross-referencing |
+| **3.4 MIND Ledger, COMM DNA Transliteration & Slot-Aware Synthesis** | `core/pillars/mind/engine.py`, `core/pillars/comm_dna/engine.py`, `core/safeguards/goal_response/engine.py`, `core/pipeline/orchestrator.py` | **COMPLETED & VERIFIED** | `USER_MIND`/`GOAL` active record integration, personal transliteration spelling map (`evideya` -> `evdeya`, etc.), dynamic slot-aware reply synthesis |
+| **3.5 PSYCHE LOCAL CORE (`llama-server` Readiness & RTX 5050 Matrix)** | `core/subsystems/local_core/runtime.py` | **COMPLETED & VERIFIED** | `LlamaServerProcessManager` (`127.0.0.1:8089`, `--no-webui`) + RTX 5050 hardware evaluation matrix (zero weights downloaded prior to owner approval) |
+| **3.6 210-Case Golden Multilingual Suite & Repo Security Hygiene** | `eval_multilingual/golden_corpus.py`, `tests/test_phase3_fortress_presence_and_eval.py`, `tests/test_repo_security_hygiene.py` | **COMPLETED & VERIFIED** | **210/210 (100.0%)** (`30/30` per mode across all 7 modes), `ac01_verbatim_sha256_all_passed = true`, secret/key/DB hygiene checks |
+
+### Phase 3 Test Suite, Evaluation & Hardware Readiness Results
+
+- **Full Automated Test Suite (`tests/`)**: **43/43 passed in 2.49s** (`test_contracts.py`, `test_people_and_memory_integrity.py`, `test_phase2_intelligence_and_local_core.py`, `test_phase3_fortress_presence_and_eval.py`, `test_repo_security_hygiene.py`, `test_storage_security.py`, `test_timeline_engine.py`).
+- **210-Case Golden Multilingual Evaluation (`eval_multilingual/golden_corpus.py`)**:
+  - Overall Pass Rate: **210/210 (100.0%)** (`ac03_meets_95pct_threshold = true`)
+  - Per-Mode Breakdown: `en` **30/30 (100.0%)**, `hi-Latn` **30/30 (100.0%)**, `hi-Deva` **30/30 (100.0%)**, `ml-Latn` **30/30 (100.0%)**, `ml-Mlym` **30/30 (100.0%)**, `te-Latn` **30/30 (100.0%)**, `te-Telu` **30/30 (100.0%)**.
+  - Raw UTF-8 SHA-256 Verbatim Preservation (`AC-01`): **210/210 (100.0%)**.
+- **RTX 5050 Local LLM Evaluation (Zero Downloads Performed)**:
+  - Observed Free VRAM: **6,373.0 MiB** (Governor Cap: **6,600.0 MiB**).
+  - Recommended Primary Tier-2 Model: **`Qwen2.5-7B-Instruct-Q4_K_M`** (`5,580.0 MiB` est. VRAM, `620.0 MiB` RAM, `793.0 MiB` free VRAM headroom, `PENDING_OWNER_APPROVAL`).
+  - Recommended Fast Tier-1 Model: **`Qwen2.5-3B-Instruct-Q4_K_M`** (`2,500.0 MiB` est. VRAM, `350.0 MiB` RAM, `3,873.0 MiB` free VRAM headroom, `PENDING_OWNER_APPROVAL`).
+  - Secondary Fallback: `Llama-3.1-8B-Instruct-Q4_K_M` (`5,870.0 MiB` est. VRAM, `503.0 MiB` free VRAM headroom).
+  - Rejected Over-Budget: `Gemma-2-9B-It-Q4_K_M` (`6,860.0 MiB` est. VRAM, exceeds 6,600 MiB cap).
+  - Built-in Offline Tier-0 Fallback: `local/psyche-analytical-core-v1` (`120.0 MiB` est. VRAM, `BUILTIN_ACTIVE`).
+  - **\$0.00 external API spend** (`external_providers_enabled = false`); zero `.gguf` files downloaded awaiting owner approval.
+
+---
+
+## 4. Coordination Notes for Lenovo LOQ (Android Track)
 
 1. **Contract Conformance Unchanged & Ready**:
    - `/contracts/v1/*.schema.json` remains bit-for-bit identical to `origin/main` (`06e9ed7`).

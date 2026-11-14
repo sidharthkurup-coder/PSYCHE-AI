@@ -26,12 +26,41 @@ class MindPillarEngine:
         relationship_tier: str,
         research_brief: ResearchEvidenceBrief,
         user_boundary_notes: dict[str, Any] | list[str] | None = None,
+        user_mind_memories: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Returns the contract-compliant `mind` pillar assessment."""
+        mind_ledger_summaries: list[str] = []
+        for raw_m in user_mind_memories or []:
+            if not isinstance(raw_m, dict):
+                continue
+            rec = raw_m.get("memory_record", raw_m)
+            if not isinstance(rec, dict):
+                continue
+            q_obj = rec.get("quarantine") if isinstance(rec.get("quarantine"), dict) else {}
+            l_obj = rec.get("lifecycle") if isinstance(rec.get("lifecycle"), dict) else {}
+            if rec.get("quarantined") or q_obj.get("status", "NONE") != "NONE":
+                continue
+            if l_obj.get("status", "ACTIVE") != "ACTIVE":
+                continue
+            text_val = str(rec.get("statement_text") or rec.get("canonical_summary") or "").strip()
+            if text_val:
+                mind_ledger_summaries.append(text_val)
+
+        goal_parts: list[str] = []
+        if research_brief.goal_manifesto_excerpts:
+            goal_parts.append(research_brief.goal_manifesto_excerpts[0])
+        if mind_ledger_summaries:
+            goal_parts.append(f"MIND Ledger: {mind_ledger_summaries[0]}")
+
         goals_summary = (
-            research_brief.goal_manifesto_excerpts[0]
-            if research_brief.goal_manifesto_excerpts
+            " | ".join(goal_parts)
+            if goal_parts
             else "Maintain intentional boundaries, deep-work focus, and authentic relationships."
+        )
+        ledger_reflection_clause = (
+            f" Align with your recorded priority: '{mind_ledger_summaries[0]}'."
+            if mind_ledger_summaries
+            else ""
         )
 
         if pragmatics.boundary_pressure_detected:
@@ -45,7 +74,7 @@ class MindPillarEngine:
             )
             independent_reflection = (
                 "Does this request genuinely require immediate action tonight, or can you set a "
-                "clear, calm time window tomorrow?"
+                f"clear, calm time window tomorrow?{ledger_reflection_clause}"
             )
         elif pragmatics.acute_venting_detected or pragmatics.sarcasm_detected:
             user_goal_alignment = (
@@ -57,6 +86,7 @@ class MindPillarEngine:
             )
             independent_reflection = (
                 "What concrete outcome do you want from this conversation 48 hours from now?"
+                f"{ledger_reflection_clause}"
             )
         elif "SCHEDULING_COORDINATION" in pragmatics.speech_acts:
             user_goal_alignment = (
@@ -66,6 +96,7 @@ class MindPillarEngine:
             cognitive_trigger_watch = None
             independent_reflection = (
                 "Verify your calendar and deep-work blocks before locking in the exact time."
+                f"{ledger_reflection_clause}"
             )
         else:
             user_goal_alignment = (
@@ -78,6 +109,7 @@ class MindPillarEngine:
             )
             independent_reflection = (
                 "Respond with clarity and brevity that reflects your genuine intent."
+                f"{ledger_reflection_clause}"
             )
 
         return {

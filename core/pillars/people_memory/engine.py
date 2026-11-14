@@ -27,6 +27,12 @@ from core.contracts.validator import (
 )
 from core.safeguards.memory_integrity.engine import MemoryIntegrityEngine
 from core.storage.database import PsycheDatabase, generate_uuidv7, utc_now_iso
+from core.subsystems.fortress.pairing import (
+    FortressPairingManager,
+    canonical_batch_bytes,
+    canonical_contact_sync_bytes,
+    canonical_event_bytes,
+)
 
 EPISTEMIC_PRIORS: dict[str, float] = {
     "VERIFIED_FACT": 1.00,
@@ -58,10 +64,14 @@ class PeopleAndMemoryEngine:
         db: PsycheDatabase,
         memory_integrity: MemoryIntegrityEngine | None = None,
         validator: ContractValidator | None = None,
+        pairing_manager: FortressPairingManager | None = None,
     ) -> None:
         self.db = db
         self.validator = validator or ContractValidator()
         self.memory_integrity = memory_integrity or MemoryIntegrityEngine(
+            db=self.db, validator=self.validator
+        )
+        self.pairing = pairing_manager or FortressPairingManager(
             db=self.db, validator=self.validator
         )
 
@@ -276,9 +286,20 @@ class PeopleAndMemoryEngine:
             return None, candidates, True
         return None, [], False
 
-    def sync_android_contacts(self, request_payload: dict[str, Any]) -> dict[str, Any]:
-        """Processes a ContactSyncRequest and returns a validated ContactSyncResponse."""
+    def sync_android_contacts(
+        self,
+        request_payload: dict[str, Any],
+        *,
+        require_crypto_signature: bool = False,
+    ) -> dict[str, Any]:
+        """Processes a ContactSyncRequest, verifies Ed25519 signature if keyed, and returns ContactSyncResponse."""
         self.validator.validate("contact_sync.schema.json", "ContactSyncRequest", request_payload)
+        self.pairing.verify_device_signature(
+            device_id=request_payload["device_id"],
+            canonical_payload=canonical_contact_sync_bytes(request_payload),
+            signature_b64=request_payload["ed25519_signature"],
+            require_crypto=require_crypto_signature,
+        )
 
         resolved_mappings: list[dict[str, Any]] = []
         ambiguous_lookup_keys: list[str] = []
@@ -325,20 +346,35 @@ class PeopleAndMemoryEngine:
         self.validator.validate("contact_sync.schema.json", "ContactSyncResponse", response)
         return response
 
-    def ingest_notification_batch(self, request_payload: dict[str, Any]) -> dict[str, Any]:
-        """Processes a NotificationIngestRequest batch, preserving raw messages and recording provenance."""
+    def ingest_notification_batch(
+        self,
+        request_payload: dict[str, Any],
+        *,
+        require_crypto_signature: bool = False,
+        enforce_clock_skew: bool = False,
+        reference_now_utc: str | None = None,
+    ) -> dict[str, Any]:
+        """Processes a NotificationIngestRequest batch with Ed25519 verification & replay defense."""
         self.validator.validate(
             "notification_ingest.schema.json", "NotificationIngestRequest", request_payload
         )
         conn = self.db.connection
         device_id = request_payload["device_id"]
 
-        # Verify device is paired and active
-        dev_row = conn.execute(
-            "SELECT trust_status FROM paired_devices WHERE device_id = ?", (device_id,)
-        ).fetchone()
-        if dev_row is None or dev_row["trust_status"] != "ACTIVE":
-            raise PermissionError(f"Device {device_id} is not an active paired device")
+        # Verify device is paired, active, and batch Ed25519 signature + replay window pass
+        self.pairing.verify_device_signature(
+            device_id=device_id,
+            canonical_payload=canonical_batch_bytes(request_payload),
+            signature_b64=request_payload["batch_ed25519_signature"],
+            require_crypto=require_crypto_signature,
+        )
+        self.pairing.check_replay_and_clock_skew(
+            batch_id=request_payload["batch_id"],
+            device_id=device_id,
+            sent_at_utc=request_payload["sent_at_utc"],
+            reference_now_utc=reference_now_utc,
+            enforce_clock_skew=enforce_clock_skew,
+        )
 
         acked_ids: list[str] = []
         duplicate_ids: list[str] = []
@@ -356,6 +392,23 @@ class PeopleAndMemoryEngine:
                     {
                         "event_id": ev_id,
                         "error_code": exc.error_code,
+                        "reason": str(exc),
+                    }
+                )
+                continue
+
+            try:
+                self.pairing.verify_device_signature(
+                    device_id=device_id,
+                    canonical_payload=canonical_event_bytes(ev),
+                    signature_b64=ev["security"]["ed25519_event_signature"],
+                    require_crypto=require_crypto_signature,
+                )
+            except PermissionError as exc:
+                rejected_events.append(
+                    {
+                        "event_id": ev_id,
+                        "error_code": "INVALID_ED25519_SIGNATURE",
                         "reason": str(exc),
                     }
                 )

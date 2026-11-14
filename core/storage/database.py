@@ -42,19 +42,98 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_CROSS_LINGUAL_CONCEPT_ANCHORS: dict[str, tuple[str, ...]] = {
+    "LOCATION_WHERE": (
+        "where", "location", "place", "reach", "reached",
+        "kahan", "kidhar", "kaha", "pahunch", "pohoch",
+        "कहाँ", "कहां", "किधर", "पहुँच", "पहुंच",
+        "evide", "evideya", "evde", "evdeya", "ethiya", "ethi",
+        "എവിടെ", "എവിടെയാ", "എവിടെയാണ്", "എത്തി",
+        "ekkada", "ekkadiki", "ekada", "vachava",
+        "ఎక్కడ", "ఎక్కడికి", "వచ్చావా",
+    ),
+    "TIME_WHEN": (
+        "when", "time", "tonight", "evening", "tomorrow", "morning", "today",
+        "kab", "samay", "kal", "aaj", "shaam", "subah", "raat", "baje",
+        "कब", "समय", "कल", "आज", "शाम", "सुबह", "रात", "बजे",
+        "eppo", "eppozha", "naale", "innu", "raathri", "vaikittu", "ravile", "manikku", "maniku",
+        "എപ്പോൾ", "എപ്പോഴാ", "നാളെ", "ഇന്ന്", "രാത്രി", "വൈകുന്നേരം", "മണിക്ക്",
+        "eppudu", "epudu", "repu", "reppu", "ivala", "podunna", "sayantram", "gantalaku",
+        "ఎప్పుడు", "రేపు", "ఈరోజు", "సాయంత్రం", "ఉదయం", "గంటలకు",
+    ),
+    "MEET_CALL_PLAN": (
+        "meet", "call", "dinner", "coffee", "talk", "plan", "confirm",
+        "milna", "milte", "baat", "phone",
+        "मिलना", "मिलते", "बात", "फोन", "कॉल",
+        "kaanam", "kanam", "vilikkan", "vilikkam", "samsarikam",
+        "കാണാം", "വിളിക്കാം", "സംസാരിക്കാം",
+        "kaluddam", "kaludam", "maatladam", "cheddam", "chedam",
+        "కలుద్దాం", "మాట్లాడదాం", "కాల్", "చేద్దాం",
+    ),
+    "URGENCY_NOW": (
+        "urgent", "urgently", "now", "immediately", "asap", "hurry", "fast",
+        "abhi", "jaldi", "turant", "foran", "abhi ke abhi",
+        "अभी", "जल्दी", "तुरंत", "फौरन",
+        "ippo", "ippo thanne", "ippothanne", "pettennu", "petannu", "udane", "vegathil",
+        "ഇപ്പോൾ", "ഇപ്പോ തന്നെ", "പെട്ടെന്ന്", "ഉടനെ", "വേഗം",
+        "ippude", "ipude", "ventane", "thondaraga", "twaraga",
+        "ఇప్పుడే", "వెంటనే", "తొందరగా", "త్వరగా",
+    ),
+    "FOCUS_WORK_BOUNDARY": (
+        "study", "exam", "work", "focus", "busy", "deadline", "project", "boundary", "boundaries", "quiet",
+        "padhai", "kaam", "vyast",
+        "पढ़ाई", "काम", "व्यस्त", "परीक्षा",
+        "padikkan", "padanam", "joli", "thirakk", "thirakku",
+        "പഠിക്കാൻ", "പഠനം", "ജോലി", "തിരക്ക്", "പരീക്ഷ",
+        "chaduvu", "chaduvukovali", "pani", "pariksha",
+        "చదువు", "పని", "పరీక్ష", "బిజీ",
+    ),
+    "NEGATION_DECLINE": (
+        "cannot", "cant", "unable", "later",
+        "nahi", "nhi", "mat", "baad mein",
+        "नहीं", "मत", "बाद में",
+        "illa", "patti", "pattilla", "venda", "pinne",
+        "ഇല്ല", "പറ്റില്ല", "വേണ്ട", "പിന്നെ",
+        "ledu", "kadu", "kaadu", "kudaradu", "vadu", "taruvata",
+        "లేదు", "కాదు", "కుదరదు", "వద్దు", "తరువాత",
+    ),
+    "CARE_FAMILY_HOME": (
+        "care", "love", "home", "mom", "dad", "brother", "sister", "family", "eat", "food", "safe",
+        "khana", "ghar", "maa", "mummy", "papa", "bhai", "behen", "theek", "dhyan",
+        "खाना", "घर", "माँ", "पापा", "भाई", "बहन", "ठीक", "ध्यान",
+        "veedu", "amma", "achan", "chetta", "chechi", "bhakshanam", "kazhicho", "sukhamaano",
+        "വീട്", "അമ്മ", "അച്ഛൻ", "ചേട്ടൻ", "ചേച്ചി", "ഭക്ഷണം", "കഴിച്ചോ", "സുഖമാണോ",
+        "illu", "nanna", "anna", "akka", "bhojanam", "tinnava", "bagunnava",
+        "ఇల్లు", "నాన్న", "అన్న", "అక్క", "భోజనం", "తిన్నావా", "బాగున్నావా",
+    ),
+    "EMOTION_APOLOGY_STRESS": (
+        "sorry", "upset", "angry", "hurt", "tired", "stress", "stressed", "worried",
+        "maaf", "gussa", "pareshan", "tension",
+        "माफ़", "माफ", "गुस्सा", "परेशान", "तनाव",
+        "deshyam", "sankadam", "vishamam", "ksheenam",
+        "ക്ഷമിക്കണം", "ദേഷ്യം", "സങ്കടം", "വിഷമം", "ക്ഷീണം",
+        "kopam", "badha", "baadha", "alisipoyanu",
+        "క్షమించు", "కోపం", "బాధ", "టెన్షన్",
+    ),
+}
+
+
 def compute_local_multilingual_embedding(text: str, dim: int = VECTOR_DIM) -> np.ndarray:
     """Computes a deterministic L2-normalized float16 embedding vector across all 7 language modes.
 
-    Combines exact UTF-8 character 3/4-grams, raw tokens, and phonetic-normalized tokens so
-    cross-script and transliterated equivalents ('evideya'/'evdeya'/'എവിടെയാ', 'Ammu'/'അമ്മു')
-    project into aligned subspaces with < 0.5 ms latency on Ryzen 7 CPU.
+    Combines exact UTF-8 character 3/4-grams, raw tokens, phonetic-normalized tokens, and
+    cross-lingual semantic concept anchors across en, hi-Latn, hi-Deva, ml-Latn, ml-Mlym,
+    te-Latn, and te-Telu so cross-script equivalents project into aligned subspaces with < 0.5 ms
+    latency on Ryzen 7 CPU.
     """
     vec = np.zeros(dim, dtype=np.float32)
+    lower_text = text.lower()
     phonetic = normalize_phonetic_search_key(text)
-    combined = f"{text.lower()} {phonetic}"
+    combined = f"{lower_text} {phonetic}"
 
     # Token unigrams & bigrams
     tokens = re.findall(r"\w+", combined)
+    token_set = set(tokens)
     features: list[tuple[str, float]] = []
     for i, tok in enumerate(tokens):
         features.append((f"tok:{tok}", 2.0))
@@ -65,6 +144,20 @@ def compute_local_multilingual_embedding(text: str, dim: int = VECTOR_DIM) -> np
         for n in (3, 4):
             for j in range(max(0, len(padded) - n + 1)):
                 features.append((f"cg{n}:{padded[j : j + n]}", 1.0))
+
+    # Boosted cross-lingual concept anchor dimensions across all 7 authorized modes
+    for concept_name, anchor_terms in _CROSS_LINGUAL_CONCEPT_ANCHORS.items():
+        matched = False
+        for term in anchor_terms:
+            if term in token_set:
+                matched = True
+                break
+            if (" " in term or ord(term[0]) > 127) and term in lower_text:
+                matched = True
+                break
+        if matched:
+            for slot in range(4):
+                features.append((f"concept:{concept_name}:{slot}", 4.5))
 
     if not features:
         vec[0] = 1.0

@@ -20,6 +20,62 @@ from core.contracts.validator import (
 from core.multilingual.pragmatics import MultilingualPragmaticAnalysis
 from core.pillars.people_memory.engine import PeopleAndMemoryEngine
 
+_TRANSLITERATION_VARIANT_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("evideya", "evdeya"),
+    ("evide", "evde"),
+    ("manikku", "maniku", "manik"),
+    ("cheyyam", "cheyam"),
+    ("naale", "nale"),
+    ("ippo", "ippam", "ippol"),
+    ("samsarikkam", "samsarikam"),
+    ("vilikkam", "vilikam"),
+    ("rathri", "raathri"),
+    ("kurachu", "korachu", "kurach"),
+    ("nahi", "nhi", "naahi"),
+    ("kahan", "kaha", "kha"),
+    ("haan", "han"),
+    ("theek", "thik", "thk"),
+    ("abhi", "abi"),
+    ("thoda", "thora"),
+    ("aaram", "aram"),
+    ("repu", "reppu"),
+    ("ekkada", "ekada"),
+    ("eppudu", "epudu"),
+    ("cheddam", "chedam", "cheddham"),
+    ("kaluddam", "kaludam"),
+    ("koncham", "konchem"),
+    ("ippudu", "ipudu"),
+    ("sayantram", "saayantram"),
+    ("matladukundam", "maatladukundam", "matladam"),
+)
+
+
+def _extract_transliteration_preferences(
+    text: str,
+    existing_map: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Learns preferred Romanized spellings (e.g., `evdeya` vs `evideya`) from user text."""
+    updated = dict(existing_map or {})
+    lowered_tokens = [tok.lower() for tok in re.findall(r"[A-Za-z']+", text)]
+    token_set = set(lowered_tokens)
+    for group in _TRANSLITERATION_VARIANT_GROUPS:
+        # Preserve rightmost/latest occurrence if multiple variants appear in one edit
+        chosen: str | None = None
+        for tok in lowered_tokens:
+            if tok in group:
+                chosen = tok
+        if chosen is None or chosen not in token_set:
+            continue
+        group_set = set(group)
+        # Clear previous mappings pointing to or from variants in this group so rewrites stay acyclic
+        for k in list(updated.keys()):
+            if k in group_set or updated[k] in group_set:
+                del updated[k]
+        for variant in group:
+            if variant != chosen:
+                updated[variant] = chosen
+    return updated
+
 
 class CommunicationDnaPillarEngine:
     """Learns, retrieves, and enforces the user's authentic per-contact COMMUNICATION DNA."""
@@ -59,6 +115,10 @@ class CommunicationDnaPillarEngine:
         existing = self.people_memory.get_comm_dna_profile(person_id)
         prev_markers = existing["signature_markers"] if existing else []
         merged_markers = list(dict.fromkeys([m.lower() for m in marker_candidates] + prev_markers))[:6]
+        prev_spelling_map = existing.get("transliteration_spelling_map") if existing else {}
+        merged_spelling_map = _extract_transliteration_preferences(
+            user_message_text, prev_spelling_map
+        )
 
         formality = 0.20 if merged_markers or drops_period else 0.55
         if existing:
@@ -76,6 +136,7 @@ class CommunicationDnaPillarEngine:
             cadence_profile=cadence_profile,
             signature_markers=merged_markers,
             formality_level=formality,
+            transliteration_spelling_map=merged_spelling_map,
         )
         return self.people_memory.get_comm_dna_profile(person_id) or {}
 

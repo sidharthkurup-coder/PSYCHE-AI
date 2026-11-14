@@ -157,7 +157,7 @@ _SARCASM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(
-            r"\bvalare\s+nannayi\b.*?\b(?:ippo|ippozhaano|late)\b|വളരെ\s+നന്നായി.*?ഇപ്പോഴാണോ",
+            r"\bvalare\s+nannayi\b.*?\b(?:ippo|ippozha+no|late)\b|വളരെ\s+നന്നായി.*?ഇപ്പോഴാണോ",
             re.IGNORECASE,
         ),
         "Malayalam/Manglish sarcastic praise ('valare nannayi' / 'വളരെ നന്നായി') criticizing a delayed update.",
@@ -178,7 +178,7 @@ _SARCASM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(
-            r"^(?:fine\.|whatever\.|sheri\s+enna\.?|ശരി\s+എന്നാ\.?|rehne\s+do\.?|रहने\s+दो\.?|sare\s+le\.?|సరే\s+లే\.?)$",
+            r"^(?:fine\.|whatever\.|sheri\s+enna\.?|ശരി\s+എന്നാ\.?|rehne\s+do\.?|रहने\s+दो[.।]?|sare\s+le\.?|సరే\s+లే\.?)$",
             re.IGNORECASE,
         ),
         "Curt, passive-aggressive closure signaling unresolved displeasure.",
@@ -187,13 +187,13 @@ _SARCASM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 
 _INTIMATE_MARKERS = re.compile(
     r"\b(?:eda|edi|machane|aliya|nee|tu|yaar|bhai|bro|nuvvu|ra|mama|machi)\b|"
-    r"(?:എടാ|എടി|മച്ചാനെ|നീ|तू|यार|भाई|నువ్వు|రా|మామ)",
+    r"(?:^|(?<=[\s,.!?;:'\"()।-]))(?:എടാ|എടി|മച്ചാനെ|നീ|तू|यार|भाई|నువ్వు|రా|మామ)(?=$|[\s,.!?;:'\"()।-])",
     re.IGNORECASE,
 )
 
 _RESPECT_HONORIFICS = re.compile(
-    r"\b(?:ningal|chechi|chettan|chetta|aap|ji|bhaiya|didi|meeru|andi|garu|gaaru|anna|akka|sir|madam)\b|"
-    r"(?:നിങ്ങൾ|ചേച്ചി|ചേട്ടൻ|आप|जी|भैया|दीदी|మీరు|అండి|గారు|అన్నా|అక్క)",
+    r"\b(?:ningal|ningalkku|chechi|chettan|chetta|aap|ji|bhaiya|didi|meeru|andi|garu|gaaru|anna|akka|sir|madam)\b|"
+    r"(?:^|(?<=[\s,.!?;:'\"()।-]))(?:നിങ്ങൾ|നിങ്ങൾക്ക്|ചേച്ചി|ചേട്ടൻ|आप|आपक[ाेीो]|आपसे|जी|भैया|दीदी|మీరు|అండి|గారు|అన్నా|అక్క)(?=$|[\s,.!?;:'\"()।-])",
     re.IGNORECASE,
 )
 
@@ -215,7 +215,7 @@ _SCHEDULING_PATTERNS = re.compile(
     r"\b(?:call|meet|meeting|tomorrow|tonight|evening|morning|time|schedule|"
     r"nale|rathri|manikku|vilikkam|vilikkamo|cheyyamo|varumo|"
     r"kal|milte|baat\s+karte|repu|intiki|vastava|kaluddam)\b|"
-    r"(?:നാളെ|രാത്രി|മണിക്ക്|വിളിക്കാം|कल|मिलते|రేపు|వస్తావా)",
+    r"(?:നാളെ|രാത്രി|മണിക്ക്|വിളിക്കാം|കാണാം|സംസാരിക്കാം|कल|मिलते|రేపు|వస్తావా|కాల్|మాట్లాడు)",
     re.IGNORECASE,
 )
 

@@ -39,14 +39,21 @@ ALL_VALID_LANGUAGE_TAGS: frozenset[str] = AUTHORIZED_LANGUAGE_MODES | {"out_of_s
 # Curated high-precision Romanized Indic morphological & lexical markers
 _ML_LATN_LEXICON: frozenset[str] = frozenset(
     {
-        "nale", "naale", "rathri", "raathri", "manikku", "cheyyamo", "cheyyam",
+        "nale", "naale", "rathri", "raathri", "manikku", "maniku", "cheyyamo", "cheyyam", "cheyam",
         "evide", "evideya", "evdeya", "evde", "varumo", "varaam", "varam",
         "und", "undu", "undo", "illa", "alle", "aano", "ano", "machane", "eda",
         "edi", "mole", "mone", "chechi", "chetta", "chettan", "amma", "acha",
         "achan", "kazhinjo", "kazhinju", "bhakshanam", "kudicho", "parayu",
-        "parayoo", "ariyilla", "nokkam", "vilikkam", "vilikku", "sukhamano",
+        "parayoo", "ariyilla", "nokkam", "vilikkam", "vilikam", "vilikku", "sukhamano",
         "entha", "enthu", "eppo", "eppozha", "veetil", "veettil", "uff", "pinne",
         "valya", "karyam", "aayi", "theerchayayum", "njan", "njn", "nee", "ningal",
+        "sheri", "enna", "valare", "nannayi", "ippo", "ippol", "thanne",
+        "ippozhano", "ippozhaano", "parayunnath", "avide", "motham", "contra",
+        "adipoli", "pwoli", "sadhanam", "avan", "enikku", "theppu", "thannu",
+        "onnum", "parayanda", "budhimuttayi", "budhimuttanu", "ini", "mindilla",
+        "veruthu", "poyi", "ethi", "ningalkku", "tharam", "chaya", "thirakkundu",
+        "thudangunnath", "ravile", "kurachu", "samsarikkam", "samsarikam", "kaanam",
+        "nu", "ee",
     }
 )
 
@@ -55,10 +62,16 @@ _TE_LATN_LEXICON: frozenset[str] = frozenset(
         "ekkada", "ekada", "vastunna", "vasthunna", "vastava", "cheppu",
         "cheppandi", "garu", "gaaru", "em", "emi", "chestunnav", "chesthunnav",
         "chestunnaru", "bagunnara", "bagundi", "chala", "chaala", "avunu",
-        "kaadu", "kadu", "ledu", "leru", "undi", "unnava", "unnaru", "repu",
+        "kaadu", "kadu", "ledu", "leru", "undi", "unnava", "unnaru", "repu", "reppu",
         "ellundi", "intlo", "intiki", "tinnava", "thinnava", "nuvvu", "meeru",
         "nenu", "manam", "enduku", "eppudu", "ela", "chesava", "chestha",
-        "veldham", "kaluddam", "anna", "akka", "babu", "ra", "raa", "andi",
+        "veldham", "kaluddam", "kaludam", "anna", "akka", "babu", "ra", "raa", "andi",
+        "sare", "le", "ippude", "chey", "ante", "avvadu", "goppaga", "cheppav",
+        "ippatiki", "gurthochinda", "teesko", "mama", "anni", "avuthayi", "pedda",
+        "bisket", "vesav", "kada", "chestam", "konchem", "koncham", "cheyali",
+        "chiraku", "vastundi", "naaku", "godava", "tho", "gantalaku", "vastara",
+        "vastha", "podunna", "ivala", "unna", "untava", "kani", "vaddu", "ani",
+        "ippati", "varaku", "ki",
     }
 )
 
@@ -66,11 +79,18 @@ _HI_LATN_LEXICON: frozenset[str] = frozenset(
     {
         "kya", "kyaa", "kar", "kr", "raha", "rha", "rahi", "rhi", "rahe",
         "hai", "hain", "nahi", "nhi", "naa", "mat", "kal", "aaj", "abhi",
-        "kab", "kahan", "kaha", "kaise", "kaisa", "kyun", "kyu", "bhai",
+        "kab", "kahan", "kaha", "kaise", "kaisa", "kyun", "kyu", "bhai", "bhaiya", "didi", "ji",
         "yaar", "dost", "milte", "milna", "baat", "batao", "bata", "chalo",
         "chal", "theek", "thik", "acha", "accha", "haan", "bilkul", "aur",
         "kuch", "ghar", "kaam", "karna", "karo", "tum", "aap", "main", "mai",
         "hum", "mera", "tera", "uska", "bohot", "bahut", "zyada", "thoda",
+        "shaam", "ko", "subah", "raat", "baje", "rehne", "jawab", "de", "aa",
+        "kiya", "ab", "jab", "sab", "bhool", "gaye", "gaya", "batti", "gul",
+        "ho", "gayi", "poora", "din", "padh", "itna", "bhav", "kha", "dimag",
+        "kharab", "lag", "par", "mein", "pe", "tak", "bhejunga", "karunga",
+        "milunga", "jaldi", "sirf", "mazaak", "tha", "aakar", "diya", "pahunch",
+        "laga", "sun", "aaram", "se", "yeh", "payega", "bura", "manna", "mere",
+        "paas", "band", "shaant", "raho", "tumhara", "khoob", "ka", "ke",
     }
 )
 
@@ -83,6 +103,9 @@ _EN_COMMON_LEXICON: frozenset[str] = frozenset(
         "call", "office", "meeting", "project", "report", "please", "thanks",
         "tomorrow", "today", "tonight", "bro", "hey", "hello", "okay", "sure",
         "send", "check", "update", "time", "work", "home", "later", "soon",
+        "dinner", "lunch", "coffee", "busy", "job", "plan", "wait", "late",
+        "tension", "urgent", "reply", "exam", "presentation", "set", "super",
+        "no", "excuses", "me", "light", "do", "am", "pm",
     }
 )
 
@@ -130,8 +153,8 @@ def is_sensitive_or_otp_notification(raw_text: str, package_name: str = "") -> b
     return any(pattern.search(raw_text) for pattern in _OTP_PATTERNS)
 
 
-def _classify_word_script_and_mode(token: str) -> str:
-    """Classifies a single word token into one of the 7 authorized language modes or out_of_scope."""
+def _classify_word_raw(token: str) -> tuple[str, str]:
+    """Classifies a single token into a preliminary mode/unknown tag plus cleaned Latin base."""
     has_deva = False
     has_mlym = False
     has_telu = False
@@ -152,68 +175,124 @@ def _classify_word_script_and_mode(token: str) -> str:
             has_other_alpha = True
 
     if has_other_alpha and not (has_deva or has_mlym or has_telu):
-        return "out_of_scope"
+        return "out_of_scope", ""
     if has_mlym:
-        return "ml-Mlym"
+        return "ml-Mlym", ""
     if has_telu:
-        return "te-Telu"
+        return "te-Telu", ""
     if has_deva:
-        return "hi-Deva"
+        return "hi-Deva", ""
 
     if not has_latin:
-        return "en"
+        return "en", ""
 
     cleaned = re.sub(r"[^a-zA-Z-]", "", token).lower()
     parts = [p for p in cleaned.split("-") if p]
     if not parts:
-        return "en"
+        return "en", ""
 
     # Check hyphenated suffix code-mixing like "office-il"
     if len(parts) >= 2 and parts[-1] in {"il", "ude", "kku", "ile", "aal"}:
-        return "ml-Latn"
+        return "ml-Latn", cleaned.replace("-", "")
     if len(parts) >= 2 and parts[-1] in {"lo", "ki", "tho", "garu"}:
-        return "te-Latn"
+        return "te-Latn", cleaned.replace("-", "")
 
     base = cleaned.replace("-", "")
+    if base in {"chala", "nee", "ee", "nu", "do"}:
+        return "latin_homograph", base
     if base in _ML_LATN_LEXICON:
-        return "ml-Latn"
+        return "ml-Latn", base
     if base in _TE_LATN_LEXICON:
-        return "te-Latn"
+        return "te-Latn", base
     if base in _HI_LATN_LEXICON:
-        return "hi-Latn"
+        return "hi-Latn", base
     if base in _EN_COMMON_LEXICON:
-        return "en"
+        return "en", base
 
     # Morphological suffix heuristics for Romanized Malayalam / Telugu / Hindi
     if base.endswith(("kkum", "kku", "aano", "alle", "unndo", "undo", "cheyyu", "cheyyamo", "ikkam")):
-        return "ml-Latn"
+        return "ml-Latn", base
     if base.endswith(("stunna", "sthunna", "unnava", "unnaru", "avunu", "ppandi", "tunnava")):
-        return "te-Latn"
+        return "te-Latn", base
     if base.endswith(("ounga", "aunga", "enge", "wali", "wale")):
-        return "hi-Latn"
+        return "hi-Latn", base
 
-    return "en"
+    return "latin_unknown", base
+
+
+def _classify_word_script_and_mode(token: str) -> str:
+    """Classifies a single word token into one of the 7 authorized language modes or out_of_scope."""
+    raw_mode, _ = _classify_word_raw(token)
+    return "en" if raw_mode == "latin_unknown" else raw_mode
 
 
 def detect_language_modes_and_spans(raw_text: str) -> tuple[list[str], list[dict[str, Any]]]:
     """Non-destructively detects language modes and token spans across the 7 authorized modes.
 
-    Preserves raw_text untouched and supports intra-message code-mixing.
+    Preserves raw_text untouched and supports intra-message code-mixing and sentence-level
+    disambiguation for unlisted Romanized Indic words and cross-language homographs.
     """
-    spans: list[dict[str, Any]] = []
-    modes_ordered: list[str] = []
+    raw_items: list[dict[str, Any]] = []
+    explicit_counts: dict[str, int] = {}
+    has_explicit_en = False
 
     for match in re.finditer(r"\S+", raw_text):
         token_text = match.group(0)
-        # Skip pure punctuation/numbers/emojis unless alphabetic characters exist
         if not any(ch.isalpha() for ch in token_text):
             continue
-        mode = _classify_word_script_and_mode(token_text)
-        spans.append(
+        raw_mode, base = _classify_word_raw(token_text)
+        raw_items.append(
             {
                 "start_char": match.start(),
                 "end_char": match.end(),
                 "token_text": token_text,
+                "raw_mode": raw_mode,
+                "base": base,
+            }
+        )
+        if raw_mode in {"hi-Latn", "ml-Latn", "te-Latn"}:
+            explicit_counts[raw_mode] = explicit_counts.get(raw_mode, 0) + 1
+        elif raw_mode == "en" and base in _EN_COMMON_LEXICON and base != "do":
+            has_explicit_en = True
+
+    dominant_indic_latn: str | None = None
+    if explicit_counts:
+        dominant_indic_latn = max(explicit_counts.items(), key=lambda kv: kv[1])[0]
+
+    spans: list[dict[str, Any]] = []
+    modes_ordered: list[str] = []
+    for item in raw_items:
+        mode = item["raw_mode"]
+        base = item["base"]
+
+        # Sentence-level cross-mode homograph disambiguation
+        if mode == "latin_homograph":
+            if base == "chala":
+                if explicit_counts.get("hi-Latn", 0) > explicit_counts.get("te-Latn", 0):
+                    mode = "hi-Latn"
+                else:
+                    mode = "te-Latn"
+            elif base in {"nee", "ee", "nu"}:
+                if explicit_counts.get("te-Latn", 0) > explicit_counts.get("ml-Latn", 0):
+                    mode = "te-Latn"
+                else:
+                    mode = "ml-Latn"
+            elif base == "do":
+                if explicit_counts.get("hi-Latn", 0) >= 1 and not has_explicit_en:
+                    mode = "hi-Latn"
+                else:
+                    mode = "en"
+        elif mode == "latin_unknown":
+            if dominant_indic_latn is not None and not has_explicit_en:
+                mode = dominant_indic_latn
+            else:
+                mode = "en"
+
+        spans.append(
+            {
+                "start_char": item["start_char"],
+                "end_char": item["end_char"],
+                "token_text": item["token_text"],
                 "language_mode": mode,
             }
         )

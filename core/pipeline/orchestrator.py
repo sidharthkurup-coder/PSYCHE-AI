@@ -31,8 +31,10 @@ from core.safeguards.timeline.engine import ConversationTimelineEngine
 from core.safeguards.uncertainty.engine import ContextualUncertaintyEngine
 from core.storage.database import PsycheDatabase, generate_uuidv7, utc_now_iso
 from core.subsystems.economy.governor import PsycheEconomyGovernor
+from core.subsystems.knowledge_vault import PsycheKnowledgeVaultEngine
 from core.subsystems.local_core.runtime import PsycheLocalCoreRuntime
 from core.subsystems.model_neutralizer.engine import ModelNeutralizerAndIdentityLock
+from core.subsystems.presence import PsychePresenceEngine
 from core.subsystems.research_intel.engine import PsycheResearchIntelligenceEngine
 
 
@@ -62,7 +64,15 @@ class PsycheIntelligenceOrchestrator:
         self.timeline = ConversationTimelineEngine(db=self.db, validator=self.validator)
 
         # Supporting Subsystems
-        self.research_intel = PsycheResearchIntelligenceEngine(db=self.db)
+        self.knowledge_vault = PsycheKnowledgeVaultEngine(db=self.db)
+        self.research_intel = PsycheResearchIntelligenceEngine(
+            db=self.db, knowledge_vault=self.knowledge_vault
+        )
+        self.presence = PsychePresenceEngine(
+            db=self.db,
+            validator=self.validator,
+            pairing_manager=self.people_memory.pairing,
+        )
         self.neutralizer = ModelNeutralizerAndIdentityLock()
 
         # Pillars 1, 2, 3, 4, 6
@@ -160,7 +170,25 @@ class PsycheIntelligenceOrchestrator:
         research_brief = self.research_intel.retrieve_knowledge_and_evidence(
             query_text=raw_text,
             speech_acts=prag.speech_acts,
+            retrieved_memories=retrieved_memories,
+            timeline_state=timeline_state,
         )
+
+        # Fetch active USER_MIND / GOAL memories for MIND pillar evaluation
+        mind_rows = conn.execute(
+            """
+            SELECT memory_id FROM memory_ledger
+            WHERE memory_domain IN ('USER_MIND', 'GOAL')
+              AND lifecycle_status = 'ACTIVE'
+              AND quarantine_status = 'NONE'
+            ORDER BY updated_at_utc DESC
+            LIMIT 5
+            """
+        ).fetchall()
+        user_mind_memories = [
+            self.memory_integrity.get_memory_record(r["memory_id"])
+            for r in mind_rows
+        ]
 
         # 5. Evaluate All 6 Intelligence Pillars
         human_assessment = self.human_pillar.assess(
@@ -180,6 +208,7 @@ class PsycheIntelligenceOrchestrator:
             relationship_tier=relationship_tier,
             research_brief=research_brief,
             user_boundary_notes=boundary_notes,
+            user_mind_memories=user_mind_memories,
         )
         comm_dna_assessment = self.comm_dna_pillar.assess(
             person_id=person_id,
@@ -243,6 +272,9 @@ class PsycheIntelligenceOrchestrator:
         spelling_map = (
             stored_dna.get("transliteration_spelling_map") if stored_dna else None
         )
+        learned_markers = (
+            stored_dna.get("signature_markers") if stored_dna else None
+        )
         goal_recommendations = self.goal_response_engine.generate_recommendations(
             pragmatics=prag,
             comm_dna_assessment=comm_dna_assessment,
@@ -250,6 +282,8 @@ class PsycheIntelligenceOrchestrator:
             identity_ambiguity=identity_ambiguity,
             open_contradictions_count=len(active_contradiction_ids),
             spelling_map=spelling_map,
+            raw_text=raw_text,
+            signature_markers=learned_markers,
         )
 
         now_iso = utc_now_iso()
