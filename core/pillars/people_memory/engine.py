@@ -102,6 +102,7 @@ class PeopleAndMemoryEngine:
         android_contact_lookup_key: str | None = None,
         aliases: list[dict[str, Any]] | None = None,
         normalized_phone_hashes: list[str] | None = None,
+        boundary_notes: dict[str, Any] | list[str] | None = None,
         source_quarantine_status: str = "NONE",
     ) -> str:
         """Creates or updates a canonical person entity and their cross-script aliases.
@@ -117,6 +118,7 @@ class PeopleAndMemoryEngine:
 
         conn = self.db.connection
         now_iso = utc_now_iso()
+        boundary_json = json.dumps(boundary_notes) if boundary_notes is not None else None
 
         existing_id: str | None = None
         if android_contact_lookup_key:
@@ -144,7 +146,7 @@ class PeopleAndMemoryEngine:
                 INSERT INTO people (
                     person_id, canonical_display_name, android_contact_lookup_key,
                     relationship_tier, trust_level, boundary_notes_json, created_at_utc, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     person_id,
@@ -152,6 +154,7 @@ class PeopleAndMemoryEngine:
                     android_contact_lookup_key,
                     relationship_tier,
                     trust_level,
+                    boundary_json,
                     now_iso,
                     now_iso,
                 ),
@@ -164,6 +167,7 @@ class PeopleAndMemoryEngine:
                 SET canonical_display_name = ?,
                     relationship_tier = CASE WHEN ? != 'UNKNOWN' THEN ? ELSE relationship_tier END,
                     trust_level = ?,
+                    boundary_notes_json = COALESCE(?, boundary_notes_json),
                     updated_at_utc = ?
                 WHERE person_id = ?
                 """,
@@ -172,6 +176,7 @@ class PeopleAndMemoryEngine:
                     relationship_tier,
                     relationship_tier,
                     trust_level,
+                    boundary_json,
                     now_iso,
                     person_id,
                 ),
@@ -544,12 +549,16 @@ class PeopleAndMemoryEngine:
             ) * ep_weight
 
             full_record = self.memory_integrity.get_memory_record(mid)
-            # Mandatory Contradiction Co-Retrieval Invariant: attach conflicting statements verbatim
+            # Mandatory Contradiction Co-Retrieval Invariant: attach active conflicting statements verbatim
             co_retrieved_conflicts: list[dict[str, Any]] = []
             for c in full_record["contradictions"]:
                 if c["resolution_state"] == "OPEN":
                     conf_row = conn.execute(
-                        "SELECT memory_id, statement_text, epistemic_class FROM memory_ledger WHERE memory_id = ?",
+                        """
+                        SELECT memory_id, statement_text, epistemic_class
+                        FROM memory_ledger
+                        WHERE memory_id = ? AND lifecycle_status != 'DELETED'
+                        """,
                         (c["conflicting_memory_id"],),
                     ).fetchone()
                     if conf_row:
@@ -562,17 +571,151 @@ class PeopleAndMemoryEngine:
                             }
                         )
 
+            q_warning: str | None = None
+            if full_record["quarantine"]["status"] == "EMOTIONAL_TRANSIENT":
+                exp_iso = full_record["quarantine"].get("expires_at_utc")
+                is_expired = False
+                if exp_iso:
+                    try:
+                        exp_dt = datetime.strptime(exp_iso, "%Y-%m-%dT%H:%M:%SZ").replace(
+                            tzinfo=timezone.utc
+                        )
+                        is_expired = now_ts >= exp_dt.timestamp()
+                    except ValueError:
+                        is_expired = False
+                if is_expired:
+                    q_warning = (
+                        "[QUARANTINED_EMOTIONAL_REACTION_COOLDOWN_ELAPSED — "
+                        "AWAITING_USER_CONFIRMATION; DO NOT TREAT AS PERMANENT TRAIT]"
+                    )
+                else:
+                    q_warning = (
+                        "[QUARANTINED_EMOTIONAL_REACTION — DO NOT TREAT AS PERMANENT TRAIT]"
+                    )
+
             enriched = {
                 "retrieval_score": round(total_score, 4),
                 "memory_record": full_record,
                 "co_retrieved_open_contradictions": co_retrieved_conflicts,
-                "emotional_quarantine_warning": (
-                    "[QUARANTINED_EMOTIONAL_REACTION — DO NOT TREAT AS PERMANENT TRAIT]"
-                    if full_record["quarantine"]["status"] == "EMOTIONAL_TRANSIENT"
-                    else None
-                ),
+                "emotional_quarantine_warning": q_warning,
             }
             scored_results.append((total_score, enriched))
 
         scored_results.sort(key=lambda item: item[0], reverse=True)
         return [item[1] for item in scored_results[:top_k]]
+
+    def upsert_comm_dna_profile(
+        self,
+        *,
+        person_id: str | None,
+        preferred_language_modes: list[str],
+        code_mix_ratio: dict[str, float],
+        cadence_profile: dict[str, Any] | None = None,
+        signature_markers: list[str] | None = None,
+        formality_level: float = 0.5,
+        directness_score: float = 0.7,
+        transliteration_spelling_map: dict[str, str] | None = None,
+    ) -> str:
+        """Creates or updates a per-contact or global (person_id=None) COMMUNICATION DNA profile."""
+        conn = self.db.connection
+        now_iso = utc_now_iso()
+        cadence = cadence_profile or {}
+        avg_words = float(cadence.get("avg_words", 8.0))
+        if person_id is None:
+            row = conn.execute(
+                "SELECT profile_id FROM comm_dna_profiles WHERE person_id IS NULL LIMIT 1"
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT profile_id FROM comm_dna_profiles WHERE person_id = ? LIMIT 1",
+                (person_id,),
+            ).fetchone()
+
+        if row is not None:
+            profile_id = row["profile_id"]
+            conn.execute(
+                """
+                UPDATE comm_dna_profiles
+                SET primary_language_modes_json = ?,
+                    code_mix_ratio_json = ?,
+                    typical_greeting_tokens_json = ?,
+                    formality_score = ?,
+                    directness_score = ?,
+                    avg_sentence_length_words = ?,
+                    casing_and_punctuation_style_json = ?,
+                    transliteration_spelling_map_json = ?,
+                    updated_at_utc = ?
+                WHERE profile_id = ?
+                """,
+                (
+                    json.dumps(preferred_language_modes),
+                    json.dumps(code_mix_ratio),
+                    json.dumps(signature_markers or []),
+                    float(formality_level),
+                    float(directness_score),
+                    avg_words,
+                    json.dumps(cadence),
+                    json.dumps(transliteration_spelling_map or {}),
+                    now_iso,
+                    profile_id,
+                ),
+            )
+        else:
+            profile_id = generate_uuidv7()
+            conn.execute(
+                """
+                INSERT INTO comm_dna_profiles (
+                    profile_id, person_id, primary_language_modes_json,
+                    code_mix_ratio_json, typical_greeting_tokens_json,
+                    formality_score, directness_score, avg_sentence_length_words,
+                    casing_and_punctuation_style_json, transliteration_spelling_map_json,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    profile_id,
+                    person_id,
+                    json.dumps(preferred_language_modes),
+                    json.dumps(code_mix_ratio),
+                    json.dumps(signature_markers or []),
+                    float(formality_level),
+                    float(directness_score),
+                    avg_words,
+                    json.dumps(cadence),
+                    json.dumps(transliteration_spelling_map or {}),
+                    now_iso,
+                ),
+            )
+        conn.commit()
+        return profile_id
+
+    def get_comm_dna_profile(self, person_id: str | None = None) -> dict[str, Any] | None:
+        """Fetches the per-contact COMMUNICATION DNA profile, falling back to global if needed."""
+        conn = self.db.connection
+        row = None
+        if person_id is not None:
+            row = conn.execute(
+                "SELECT * FROM comm_dna_profiles WHERE person_id = ? LIMIT 1",
+                (person_id,),
+            ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM comm_dna_profiles WHERE person_id IS NULL LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "profile_id": row["profile_id"],
+            "person_id": row["person_id"],
+            "preferred_language_modes": json.loads(row["primary_language_modes_json"]),
+            "code_mix_ratio": json.loads(row["code_mix_ratio_json"]),
+            "cadence_profile": json.loads(row["casing_and_punctuation_style_json"] or "{}"),
+            "signature_markers": json.loads(row["typical_greeting_tokens_json"] or "[]"),
+            "formality_level": float(row["formality_score"]),
+            "directness_score": float(row["directness_score"]),
+            "avg_sentence_length_words": float(row["avg_sentence_length_words"] or 8.0),
+            "transliteration_spelling_map": json.loads(
+                row["transliteration_spelling_map_json"] or "{}"
+            ),
+            "updated_at_utc": row["updated_at_utc"],
+        }

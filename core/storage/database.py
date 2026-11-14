@@ -98,7 +98,25 @@ class PsycheDatabase:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._vectors: np.ndarray = np.empty((0, VECTOR_DIM), dtype=np.float16)
+        self._locked_vectors_backup: bytes | None = None
         self._initialize_schema()
+        self._load_vectors_if_present()
+        self.vault.register_lifecycle_callbacks(
+            on_lock=self._on_vault_panic_lock,
+            on_unlock=self._on_vault_unlock,
+        )
+
+    def _on_vault_panic_lock(self) -> None:
+        """Zeroizes the decrypted in-memory NumPy vector matrix on Panic Lock."""
+        if self._vectors.size > 0:
+            if self.vector_path is None and not self.vault.is_locked:
+                # Already locked when callback runs; if vector_path is used, it's on disk encrypted
+                pass
+            self._vectors.fill(0.0)
+            self._vectors = np.empty((0, VECTOR_DIM), dtype=np.float16)
+
+    def _on_vault_unlock(self) -> None:
+        """Reloads encrypted vectors from disk when the vault is unlocked."""
         self._load_vectors_if_present()
 
     @property

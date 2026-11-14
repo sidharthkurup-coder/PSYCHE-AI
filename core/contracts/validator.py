@@ -88,7 +88,16 @@ _EN_COMMON_LEXICON: frozenset[str] = frozenset(
 
 _OTP_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:otp|one[\s-]?time\s+password|verification\s+code|security\s+code)\b", re.IGNORECASE),
-    re.compile(r"\b\d{4,8}\b.*\b(?:otp|do\s+not\s+share|valid\s+for\s+\d+\s*min)", re.IGNORECASE),
+    re.compile(
+        r"\b\d{4,8}\b.*\b(?:otp|verification\s+code|one[\s-]?time\s+password|security\s+code|"
+        r"do\s+not\s+share|valid\s+for\s+\d+\s*min|bank|upi|aadhaar)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:otp|verification\s+code|one[\s-]?time\s+password|security\s+code|"
+        r"bank|upi|aadhaar)\b.*\b\d{4,8}\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:a/c|acct|account)\s*[xX\*]+\d{3,4}\s*(?:debited|credited)\b", re.IGNORECASE),
 )
 
@@ -319,7 +328,7 @@ class ContractValidator:
         return Registry().with_resources(resources)
 
     @property
-    def loaded_schema_Warning_names(self) -> list[str]:
+    def loaded_schema_names(self) -> list[str]:
         return list(self._schemas.keys())
 
     def validate(self, schema_filename: str, def_name: str, payload: dict[str, Any]) -> None:

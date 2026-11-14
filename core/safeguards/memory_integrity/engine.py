@@ -381,7 +381,7 @@ class MemoryIntegrityEngine:
         return self.get_memory_record(new_memory_id)
 
     def delete_memory(self, memory_id: str, *, reason: str = "User requested deletion") -> None:
-        """Marks memory DELETED and zeroes out its vector embedding so 0% leaks in retrieval."""
+        """Marks memory DELETED, zeroes its vector row, and redacts provenance & contradiction quotes."""
         conn = self.db.connection
         row = conn.execute(
             "SELECT embedding_row_index FROM memory_ledger WHERE memory_id = ?", (memory_id,)
@@ -406,7 +406,64 @@ class MemoryIntegrityEngine:
             """,
             (reason, now_iso, memory_id),
         )
+        conn.execute(
+            """
+            UPDATE memory_provenance
+            SET evidence_quote_verbatim = '[DELETED_BY_USER]'
+            WHERE memory_id = ?
+            """,
+            (memory_id,),
+        )
+        conn.execute(
+            """
+            UPDATE memory_contradictions
+            SET resolution_state = 'RESOLVED_BY_USER',
+                conflict_description = '[REDACTED_DUE_TO_MEMORY_DELETION]',
+                resolved_at_utc = ?
+            WHERE memory_id_primary = ? OR memory_id_conflicting = ?
+            """,
+            (now_iso, memory_id, memory_id),
+        )
         conn.commit()
+        return self.get_memory_record(memory_id)
+
+    def release_emotional_quarantine(
+        self, memory_id: str, *, confirmed_by_user: bool = True, note: str = "Confirmed after cooldown"
+    ) -> dict[str, Any]:
+        """Releases or retracts an EMOTIONAL_TRANSIENT memory after user review post-cooldown."""
+        conn = self.db.connection
+        row = conn.execute(
+            "SELECT * FROM memory_ledger WHERE memory_id = ?", (memory_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Memory {memory_id} not found")
+        now_iso = utc_now_iso()
+        if confirmed_by_user:
+            conn.execute(
+                """
+                UPDATE memory_ledger
+                SET quarantine_status = 'NONE',
+                    quarantine_reason = NULL,
+                    quarantine_expires_utc = NULL,
+                    correction_note = ?,
+                    updated_at_utc = ?
+                WHERE memory_id = ?
+                """,
+                (note, now_iso, memory_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE memory_ledger
+                SET lifecycle_status = 'RETRACTED_BY_USER',
+                    correction_note = ?,
+                    updated_at_utc = ?
+                WHERE memory_id = ?
+                """,
+                (note, now_iso, memory_id),
+            )
+        conn.commit()
+        return self.get_memory_record(memory_id)
 
     def get_memory_record(self, memory_id: str) -> dict[str, Any]:
         """Returns a MemoryRecord dictionary validated against contracts/v1/memory_record.schema.json."""

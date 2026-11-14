@@ -169,6 +169,20 @@ def test_unapproved_language_rejected_by_contract(validator: ContractValidator) 
 def test_otp_notification_blocked_by_validator(validator: ContractValidator) -> None:
     otp_text = "Your OTP for UPI transaction is 482910. Do not share with anyone."
     assert is_sensitive_or_otp_notification(otp_text, "com.google.android.apps.messaging") is True
+    # Also test 6-digit UPI / Aadhaar / bank verification codes without the word "OTP"
+    assert (
+        is_sensitive_or_otp_notification(
+            "Use 839201 for your UPI payment to merchant.", "com.whatsapp"
+        )
+        is True
+    )
+    assert (
+        is_sensitive_or_otp_notification(
+            "Aadhaar verification number is 592014.", "com.whatsapp"
+        )
+        is True
+    )
+    assert len(validator.loaded_schema_names) == 8
     payload = {
         "event_id": "01932c7a-8b10-7000-8000-000000000005",
         "package_name": "com.google.android.apps.messaging",

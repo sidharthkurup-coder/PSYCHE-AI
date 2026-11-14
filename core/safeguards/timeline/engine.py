@@ -88,6 +88,19 @@ class ConversationTimelineEngine:
             (person_id, conversation_key),
         ).fetchall()
 
+        # Snapshot existing open loops keyed by (source_event_id, loop_kind) to preserve
+        # stable loop_ids and user overrides (e.g., DISMISSED_BY_USER, EXPIRED, manual RESOLVED)
+        existing_loop_rows = conn.execute(
+            """
+            SELECT * FROM conversation_open_loops
+            WHERE person_id = ? AND conversation_key = ?
+            """,
+            (person_id, conversation_key),
+        ).fetchall()
+        preserved_loops: dict[tuple[str | None, str], dict[str, Any]] = {}
+        for lr in existing_loop_rows:
+            preserved_loops[(lr["source_event_id"], lr["loop_kind"])] = dict(lr)
+
         # Clear previous derived timeline state for idempotent chronological reconstruction
         conn.execute(
             "DELETE FROM conversation_timeline_events WHERE person_id = ? AND conversation_key = ?",
@@ -156,7 +169,7 @@ class ConversationTimelineEngine:
                         """
                         UPDATE conversation_open_loops
                         SET status = 'RESOLVED', resolved_by_event_id = ?, resolved_at_utc = ?
-                        WHERE loop_id = ?
+                        WHERE loop_id = ? AND status = 'OPEN'
                         """,
                         (ev_id, posted_utc, lid),
                     )
@@ -167,7 +180,7 @@ class ConversationTimelineEngine:
                         """
                         UPDATE conversation_open_loops
                         SET status = 'RESOLVED', resolved_by_event_id = ?, resolved_at_utc = ?
-                        WHERE loop_id = ?
+                        WHERE loop_id = ? AND status = 'OPEN'
                         """,
                         (ev_id, posted_utc, lid),
                     )
@@ -175,11 +188,17 @@ class ConversationTimelineEngine:
 
             # 3. Check for new questions -> open loops
             if is_multilingual_question(raw_text):
-                loop_id = generate_uuidv7()
                 loop_kind = (
                     "UNANSWERED_QUESTION_INBOUND"
                     if direction == "INBOUND"
                     else "UNANSWERED_QUESTION_OUTBOUND"
+                )
+                prev_loop = preserved_loops.get((ev_id, loop_kind))
+                loop_id = prev_loop["loop_id"] if prev_loop else generate_uuidv7()
+                init_status = (
+                    prev_loop["status"]
+                    if prev_loop and prev_loop["status"] in {"DISMISSED_BY_USER", "EXPIRED"}
+                    else "OPEN"
                 )
                 conn.execute(
                     """
@@ -187,7 +206,7 @@ class ConversationTimelineEngine:
                         loop_id, person_id, conversation_key, source_event_id,
                         loop_kind, description, opened_at_utc, due_or_expected_at_utc,
                         status, resolved_by_event_id, resolved_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'OPEN', NULL, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         loop_id,
@@ -197,30 +216,47 @@ class ConversationTimelineEngine:
                         loop_kind,
                         f"Question from {row['sender_raw_title']}: {raw_text}",
                         posted_utc,
+                        prev_loop["due_or_expected_at_utc"] if prev_loop else None,
+                        init_status,
+                        prev_loop["resolved_by_event_id"] if init_status != "OPEN" else None,
+                        prev_loop["resolved_at_utc"] if init_status != "OPEN" else None,
                     ),
                 )
-                if direction == "INBOUND":
-                    open_inbound_q_ids.append(loop_id)
-                else:
-                    open_outbound_q_ids.append(loop_id)
+                if init_status == "OPEN":
+                    if direction == "INBOUND":
+                        open_inbound_q_ids.append(loop_id)
+                    else:
+                        open_outbound_q_ids.append(loop_id)
 
             # 4. Check for commitments -> UNRESOLVED_COMMITMENT open loop
             if is_multilingual_commitment(raw_text):
+                prev_commit = preserved_loops.get((ev_id, "UNRESOLVED_COMMITMENT"))
+                c_loop_id = prev_commit["loop_id"] if prev_commit else generate_uuidv7()
+                c_status = (
+                    prev_commit["status"]
+                    if prev_commit
+                    and prev_commit["status"] in {"DISMISSED_BY_USER", "EXPIRED", "RESOLVED"}
+                    else "OPEN"
+                )
                 conn.execute(
                     """
                     INSERT INTO conversation_open_loops (
                         loop_id, person_id, conversation_key, source_event_id,
                         loop_kind, description, opened_at_utc, due_or_expected_at_utc,
                         status, resolved_by_event_id, resolved_at_utc
-                    ) VALUES (?, ?, ?, ?, 'UNRESOLVED_COMMITMENT', ?, ?, NULL, 'OPEN', NULL, NULL)
+                    ) VALUES (?, ?, ?, ?, 'UNRESOLVED_COMMITMENT', ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        generate_uuidv7(),
+                        c_loop_id,
                         person_id,
                         conversation_key,
                         ev_id,
                         f"Commitment stated by {row['sender_raw_title']}: {raw_text}",
                         posted_utc,
+                        prev_commit["due_or_expected_at_utc"] if prev_commit else None,
+                        c_status,
+                        prev_commit["resolved_by_event_id"] if prev_commit else None,
+                        prev_commit["resolved_at_utc"] if prev_commit else None,
                     ),
                 )
 
@@ -399,3 +435,17 @@ class ConversationTimelineEngine:
         }
         self.validator.validate("timeline_state.schema.json", "ConversationTimelineState", state)
         return state
+
+    def dismiss_open_loop(self, loop_id: str) -> None:
+        """Marks an open loop as DISMISSED_BY_USER, preserved across timeline re-runs."""
+        conn = self.db.connection
+        now_iso = utc_now_iso()
+        conn.execute(
+            """
+            UPDATE conversation_open_loops
+            SET status = 'DISMISSED_BY_USER', resolved_at_utc = ?
+            WHERE loop_id = ?
+            """,
+            (now_iso, loop_id),
+        )
+        conn.commit()

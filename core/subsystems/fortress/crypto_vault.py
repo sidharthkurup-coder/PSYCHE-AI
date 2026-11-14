@@ -1,22 +1,25 @@
 """PSYCHE FORTRESS — Cryptographic Vault, Windows DPAPI Key Custody & Prompt-Injection Sandbox.
 
 Implements:
-- Native Windows DPAPI (crypt32.dll CryptProtectData / CryptUnprotectData) master key sealing.
-- Native Windows CNG (bcrypt.dll) hardware-accelerated AES-256-GCM authenticated encryption.
-- Panic Lock with immediate in-memory key zeroization (SECURITY.md Section 2.2).
+- Native Windows DPAPI (crypt32.dll CryptProtectData / CryptUnprotectData) master key sealing
+  with explicit ctypes memory zeroization before LocalFree.
+- Native Windows CNG (bcrypt.dll) hardware-accelerated AES-256-GCM authenticated encryption
+  using zero-copy bytearray buffers and deterministic buffer wiping in finally blocks.
+- Panic Lock with immediate in-memory key and attached database vector buffer zeroization
+  (SECURITY.md Section 2.2).
 - Untrusted notification sandboxing with randomized cryptographic nonces and prompt-injection
   detection (SECURITY.md Section 2.6).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import ctypes
 from ctypes import wintypes
 import os
 from pathlib import Path
 import re
 import secrets
-import struct
 
 _CRYPTPROTECT_UI_FORBIDDEN = 0x01
 _NONCE_LEN = 12
@@ -58,42 +61,62 @@ class _BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO(ctypes.Structure):
     ]
 
 
+def _secure_zero_ctypes(buf: ctypes.Array[ctypes.c_char] | None) -> None:
+    """Zeroizes a ctypes char array in-place in RAM."""
+    if buf is not None and ctypes.sizeof(buf) > 0:
+        ctypes.memset(ctypes.addressof(buf), 0, ctypes.sizeof(buf))
+
+
+def _secure_zero_bytearray(ba: bytearray | None) -> None:
+    """Zeroizes a mutable bytearray in-place in RAM."""
+    if ba is not None:
+        for i in range(len(ba)):
+            ba[i] = 0
+
+
 class DPAPIMasterKeyManager:
     """Seals and unseals 256-bit master keys using Windows DPAPI (crypt32.dll)."""
 
     @staticmethod
-    def protect_bytes(plaintext: bytes, entropy: bytes | None = None) -> bytes:
+    def protect_bytes(plaintext: bytes | bytearray, entropy: bytes | None = None) -> bytes:
         crypt32 = ctypes.windll.crypt32
         kernel32 = ctypes.windll.kernel32
 
-        in_buf = ctypes.create_string_buffer(plaintext, len(plaintext))
-        in_blob = _DATA_BLOB(len(plaintext), in_buf)
+        pt_len = len(plaintext)
+        in_buf = ctypes.create_string_buffer(bytes(plaintext), pt_len)
+        in_blob = _DATA_BLOB(pt_len, in_buf)
         out_blob = _DATA_BLOB()
 
+        ent_buf = None
         entropy_blob_ref = None
         if entropy:
             ent_buf = ctypes.create_string_buffer(entropy, len(entropy))
             ent_blob = _DATA_BLOB(len(entropy), ent_buf)
             entropy_blob_ref = ctypes.byref(ent_blob)
 
-        ok = crypt32.CryptProtectData(
-            ctypes.byref(in_blob),
-            None,
-            entropy_blob_ref,
-            None,
-            None,
-            _CRYPTPROTECT_UI_FORBIDDEN,
-            ctypes.byref(out_blob),
-        )
-        if not ok:
-            raise OSError("Windows DPAPI CryptProtectData failed")
         try:
+            ok = crypt32.CryptProtectData(
+                ctypes.byref(in_blob),
+                None,
+                entropy_blob_ref,
+                None,
+                None,
+                _CRYPTPROTECT_UI_FORBIDDEN,
+                ctypes.byref(out_blob),
+            )
+            if not ok:
+                raise OSError("Windows DPAPI CryptProtectData failed")
             return ctypes.string_at(out_blob.pbData, out_blob.cbData)
         finally:
-            kernel32.LocalFree(out_blob.pbData)
+            _secure_zero_ctypes(in_buf)
+            _secure_zero_ctypes(ent_buf)
+            if out_blob.pbData:
+                ctypes.memset(out_blob.pbData, 0, out_blob.cbData)
+                kernel32.LocalFree(out_blob.pbData)
 
     @staticmethod
-    def unprotect_bytes(sealed_blob: bytes, entropy: bytes | None = None) -> bytes:
+    def unprotect_to_bytearray(sealed_blob: bytes, entropy: bytes | None = None) -> bytearray:
+        """Unseals a DPAPI blob into a mutable bytearray and wipes the Win32 LocalAlloc buffer."""
         crypt32 = ctypes.windll.crypt32
         kernel32 = ctypes.windll.kernel32
 
@@ -101,27 +124,48 @@ class DPAPIMasterKeyManager:
         in_blob = _DATA_BLOB(len(sealed_blob), in_buf)
         out_blob = _DATA_BLOB()
 
+        ent_buf = None
         entropy_blob_ref = None
         if entropy:
             ent_buf = ctypes.create_string_buffer(entropy, len(entropy))
             ent_blob = _DATA_BLOB(len(entropy), ent_buf)
             entropy_blob_ref = ctypes.byref(ent_blob)
 
-        ok = crypt32.CryptUnprotectData(
-            ctypes.byref(in_blob),
-            None,
-            entropy_blob_ref,
-            None,
-            None,
-            _CRYPTPROTECT_UI_FORBIDDEN,
-            ctypes.byref(out_blob),
-        )
-        if not ok:
-            raise TamperDetectedError("Windows DPAPI CryptUnprotectData failed or blob tampered")
         try:
-            return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+            ok = crypt32.CryptUnprotectData(
+                ctypes.byref(in_blob),
+                None,
+                entropy_blob_ref,
+                None,
+                None,
+                _CRYPTPROTECT_UI_FORBIDDEN,
+                ctypes.byref(out_blob),
+            )
+            if not ok:
+                raise TamperDetectedError(
+                    "Windows DPAPI CryptUnprotectData failed or blob tampered"
+                )
+            result = bytearray(out_blob.cbData)
+            if out_blob.cbData > 0:
+                ctypes.memmove(
+                    (ctypes.c_char * out_blob.cbData).from_buffer(result),
+                    out_blob.pbData,
+                    out_blob.cbData,
+                )
+            return result
         finally:
-            kernel32.LocalFree(out_blob.pbData)
+            _secure_zero_ctypes(ent_buf)
+            if out_blob.pbData:
+                ctypes.memset(out_blob.pbData, 0, out_blob.cbData)
+                kernel32.LocalFree(out_blob.pbData)
+
+    @staticmethod
+    def unprotect_bytes(sealed_blob: bytes, entropy: bytes | None = None) -> bytes:
+        ba = DPAPIMasterKeyManager.unprotect_to_bytearray(sealed_blob, entropy=entropy)
+        try:
+            return bytes(ba)
+        finally:
+            _secure_zero_bytearray(ba)
 
 
 class AES256GCMCipher:
@@ -139,8 +183,7 @@ class AES256GCMCipher:
 
     def zeroize_and_lock(self) -> None:
         """Overwrites in-memory key buffer with zeros (Panic Lock)."""
-        for i in range(len(self._key_buffer)):
-            self._key_buffer[i] = 0
+        _secure_zero_bytearray(self._key_buffer)
         self._locked = True
 
     def encrypt(self, plaintext: bytes, aad: bytes = b"") -> bytes:
@@ -151,17 +194,36 @@ class AES256GCMCipher:
         bcrypt = ctypes.windll.bcrypt
         alg = ctypes.c_void_p()
         hkey = ctypes.c_void_p()
+        pt_buf = None
         try:
-            if bcrypt.BCryptOpenAlgorithmProvider(ctypes.byref(alg), ctypes.c_wchar_p("AES"), None, 0) != 0:
+            if (
+                bcrypt.BCryptOpenAlgorithmProvider(
+                    ctypes.byref(alg), ctypes.c_wchar_p("AES"), None, 0
+                )
+                != 0
+            ):
                 raise OSError("BCryptOpenAlgorithmProvider(AES) failed")
             gcm_mode = ctypes.create_unicode_buffer("ChainingModeGCM")
-            if bcrypt.BCryptSetProperty(
-                alg, ctypes.c_wchar_p("ChainingMode"), gcm_mode, ctypes.sizeof(gcm_mode), 0
-            ) != 0:
+            if (
+                bcrypt.BCryptSetProperty(
+                    alg,
+                    ctypes.c_wchar_p("ChainingMode"),
+                    gcm_mode,
+                    ctypes.sizeof(gcm_mode),
+                    0,
+                )
+                != 0
+            ):
                 raise OSError("BCryptSetProperty(ChainingModeGCM) failed")
 
-            key_buf = ctypes.create_string_buffer(bytes(self._key_buffer), _KEY_LEN)
-            if bcrypt.BCryptGenerateSymmetricKey(alg, ctypes.byref(hkey), None, 0, key_buf, _KEY_LEN, 0) != 0:
+            # Zero-copy view over mutable self._key_buffer (no immutable bytes allocation)
+            key_view = (ctypes.c_char * _KEY_LEN).from_buffer(self._key_buffer)
+            if (
+                bcrypt.BCryptGenerateSymmetricKey(
+                    alg, ctypes.byref(hkey), None, 0, key_view, _KEY_LEN, 0
+                )
+                != 0
+            ):
                 raise OSError("BCryptGenerateSymmetricKey failed")
 
             nonce = os.urandom(_NONCE_LEN)
@@ -202,6 +264,7 @@ class AES256GCMCipher:
             ciphertext = ct_buf.raw[:pt_len]
             return _ENVELOPE_MAGIC + nonce + tag_buf.raw + ciphertext
         finally:
+            _secure_zero_ctypes(pt_buf)
             if hkey.value:
                 bcrypt.BCryptDestroyKey(hkey)
             if alg.value:
@@ -227,17 +290,35 @@ class AES256GCMCipher:
         bcrypt = ctypes.windll.bcrypt
         alg = ctypes.c_void_p()
         hkey = ctypes.c_void_p()
+        pt_buf = None
         try:
-            if bcrypt.BCryptOpenAlgorithmProvider(ctypes.byref(alg), ctypes.c_wchar_p("AES"), None, 0) != 0:
+            if (
+                bcrypt.BCryptOpenAlgorithmProvider(
+                    ctypes.byref(alg), ctypes.c_wchar_p("AES"), None, 0
+                )
+                != 0
+            ):
                 raise OSError("BCryptOpenAlgorithmProvider(AES) failed")
             gcm_mode = ctypes.create_unicode_buffer("ChainingModeGCM")
-            if bcrypt.BCryptSetProperty(
-                alg, ctypes.c_wchar_p("ChainingMode"), gcm_mode, ctypes.sizeof(gcm_mode), 0
-            ) != 0:
+            if (
+                bcrypt.BCryptSetProperty(
+                    alg,
+                    ctypes.c_wchar_p("ChainingMode"),
+                    gcm_mode,
+                    ctypes.sizeof(gcm_mode),
+                    0,
+                )
+                != 0
+            ):
                 raise OSError("BCryptSetProperty(ChainingModeGCM) failed")
 
-            key_buf = ctypes.create_string_buffer(bytes(self._key_buffer), _KEY_LEN)
-            if bcrypt.BCryptGenerateSymmetricKey(alg, ctypes.byref(hkey), None, 0, key_buf, _KEY_LEN, 0) != 0:
+            key_view = (ctypes.c_char * _KEY_LEN).from_buffer(self._key_buffer)
+            if (
+                bcrypt.BCryptGenerateSymmetricKey(
+                    alg, ctypes.byref(hkey), None, 0, key_view, _KEY_LEN, 0
+                )
+                != 0
+            ):
                 raise OSError("BCryptGenerateSymmetricKey failed")
 
             nonce_buf = ctypes.create_string_buffer(nonce, _NONCE_LEN)
@@ -277,6 +358,7 @@ class AES256GCMCipher:
 
             return pt_buf.raw[:ct_len]
         finally:
+            _secure_zero_ctypes(pt_buf)
             if hkey.value:
                 bcrypt.BCryptDestroyKey(hkey)
             if alg.value:
@@ -291,37 +373,61 @@ class PsycheFortressVault:
     def __init__(self, key_file_path: str | Path | None = None) -> None:
         self._key_file_path = Path(key_file_path) if key_file_path else None
         self._cipher: AES256GCMCipher | None = None
+        self._on_lock_callbacks: list[Callable[[], None]] = []
+        self._on_unlock_callbacks: list[Callable[[], None]] = []
         self._unlock_or_initialize()
 
-    def _unlock_or_initialize(self) -> None:
-        if self._key_file_path is None:
-            raw_key = secrets.token_bytes(_KEY_LEN)
-            self._cipher = AES256GCMCipher(raw_key)
-            return
+    def register_lifecycle_callbacks(
+        self,
+        *,
+        on_lock: Callable[[], None] | None = None,
+        on_unlock: Callable[[], None] | None = None,
+    ) -> None:
+        """Registers callbacks invoked on panic_lock() and unlock() (e.g., to zeroize RAM vectors)."""
+        if on_lock is not None:
+            self._on_lock_callbacks.append(on_lock)
+        if on_unlock is not None:
+            self._on_unlock_callbacks.append(on_unlock)
 
-        self._key_file_path.parent.mkdir(parents=True, exist_ok=True)
-        if self._key_file_path.exists():
-            sealed = self._key_file_path.read_bytes()
-            raw_key = DPAPIMasterKeyManager.unprotect_bytes(sealed, entropy=self._ENTROPY)
-        else:
-            raw_key = secrets.token_bytes(_KEY_LEN)
-            sealed = DPAPIMasterKeyManager.protect_bytes(raw_key, entropy=self._ENTROPY)
-            self._key_file_path.write_bytes(sealed)
-        self._cipher = AES256GCMCipher(raw_key)
+    def _unlock_or_initialize(self) -> None:
+        raw_key_ba: bytearray | None = None
+        try:
+            if self._key_file_path is None:
+                raw_key_ba = bytearray(secrets.token_bytes(_KEY_LEN))
+                self._cipher = AES256GCMCipher(raw_key_ba)
+                return
+
+            self._key_file_path.parent.mkdir(parents=True, exist_ok=True)
+            if self._key_file_path.exists():
+                sealed = self._key_file_path.read_bytes()
+                raw_key_ba = DPAPIMasterKeyManager.unprotect_to_bytearray(
+                    sealed, entropy=self._ENTROPY
+                )
+            else:
+                raw_key_ba = bytearray(secrets.token_bytes(_KEY_LEN))
+                sealed = DPAPIMasterKeyManager.protect_bytes(raw_key_ba, entropy=self._ENTROPY)
+                self._key_file_path.write_bytes(sealed)
+            self._cipher = AES256GCMCipher(raw_key_ba)
+        finally:
+            _secure_zero_bytearray(raw_key_ba)
 
     @property
     def is_locked(self) -> bool:
         return self._cipher is None or self._cipher.is_locked
 
     def panic_lock(self) -> None:
-        """Immediately zeroizes decrypted key material in RAM and locks the vault."""
+        """Immediately zeroizes decrypted key material and attached vector buffers in RAM."""
         if self._cipher is not None:
             self._cipher.zeroize_and_lock()
         self._cipher = None
+        for cb in self._on_lock_callbacks:
+            cb()
 
     def unlock(self) -> None:
-        """Re-unseals the DPAPI master key file if previously locked."""
+        """Re-unseals the DPAPI master key file and notifies attached stores."""
         self._unlock_or_initialize()
+        for cb in self._on_unlock_callbacks:
+            cb()
 
     def encrypt_blob(self, plaintext: bytes, context_aad: str = "") -> bytes:
         if self._cipher is None or self._cipher.is_locked:
@@ -366,13 +472,8 @@ def detect_prompt_injection_attempt(raw_text: str) -> tuple[bool, str | None]:
 
 
 def sandbox_untrusted_message(raw_text: str, event_id: str) -> tuple[str, str]:
-    """Wraps untrusted external message text inside randomized cryptographic nonce delimiters.
-
-    Neutralizes embedded closing-tag escapes and guarantees the reasoning LLM treats the
-    enclosed text strictly as passive data (SECURITY.md Section 2.6).
-    """
+    """Wraps untrusted external message text inside randomized cryptographic nonce delimiters."""
     nonce = secrets.token_hex(8)
-    # Escape any angle brackets that might attempt to forge our delimiter tag
     sanitized_body = re.sub(
         r"(</?\s*untrusted_external_message)",
         r"[ESCAPED_TAG:\1]",

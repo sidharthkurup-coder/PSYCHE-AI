@@ -53,9 +53,11 @@ def test_panic_lock_zeroizes_key_and_blocks_database(tmp_path: Path) -> None:
     assert fetched is not None
     assert "strong boundaries" in fetched["content"]
 
-    # Trigger Panic Lock
+    # Trigger Panic Lock — must zeroize master key AND in-RAM NumPy vector matrix
+    assert db._vectors.shape[0] == 1
     vault.panic_lock()
     assert vault.is_locked is True
+    assert db._vectors.shape[0] == 0
 
     with pytest.raises(VaultLockedError):
         db.get_knowledge_vault_item(item_id)

@@ -144,6 +144,12 @@ def test_emotional_quarantine_blocks_permanent_trait_corruption(
     results = pm_engine.retrieve_relevant_memories(query_text="Vikram talking", person_id=person_id)
     assert len(results) >= 1
     assert results[0]["emotional_quarantine_warning"] is not None
+
+    # User explicitly releases quarantine after cooldown review
+    released = mem_engine.release_emotional_quarantine(
+        vent_rec["memory_id"], note="Reviewed calmly; keeping as historical episodic context only."
+    )
+    assert released["quarantine"]["status"] == "NONE"
     db.close()
 
 
@@ -205,8 +211,14 @@ def test_contradiction_detection_co_retrieval_correction_and_deletion(
     assert superseded_m1["lifecycle"]["status"] == "SUPERSEDED"
     assert superseded_m1["lifecycle"]["superseded_by_memory_id"] == corrected["memory_id"]
 
-    # Delete m2 and verify 0% leakage in active retrieval
-    mem_engine.delete_memory(m2["memory_id"], reason="Duplicate entry removed by user")
+    # Delete m2 and verify 0% leakage in active retrieval, provenance, and contradiction tables
+    deleted_rec = mem_engine.delete_memory(m2["memory_id"], reason="Duplicate entry removed by user")
+    assert deleted_rec["statement_text"] == "[DELETED_BY_USER]"
+    assert all(p["evidence_quote_verbatim"] == "[DELETED_BY_USER]" for p in deleted_rec["provenance"])
+    assert all(
+        c["conflict_description"] == "[REDACTED_DUE_TO_MEMORY_DELETION]"
+        for c in deleted_rec["contradictions"]
+    )
     after_delete = pm_engine.retrieve_relevant_memories(
         query_text="Karthik project review meeting tomorrow", person_id=person_id
     )
@@ -214,4 +226,22 @@ def test_contradiction_detection_co_retrieval_correction_and_deletion(
     assert m2["memory_id"] not in active_ids
     assert m1["memory_id"] not in active_ids
     assert corrected["memory_id"] in active_ids
+    for item in after_delete:
+        for conf in item["co_retrieved_open_contradictions"]:
+            assert conf["conflicting_memory_id"] != m2["memory_id"]
+
+    # Verify COMMUNICATION DNA profile CRUD in PeopleAndMemoryEngine
+    prof_id = pm_engine.upsert_comm_dna_profile(
+        person_id=person_id,
+        preferred_language_modes=["ml-Latn", "en"],
+        code_mix_ratio={"ml-Latn": 0.65, "en": 0.35},
+        cadence_profile={"avg_words": 8},
+        signature_markers=["machane", "eda"],
+        formality_level=0.25,
+    )
+    assert prof_id is not None
+    prof = pm_engine.get_comm_dna_profile(person_id)
+    assert prof is not None
+    assert prof["preferred_language_modes"] == ["ml-Latn", "en"]
+    assert prof["formality_level"] == 0.25
     db.close()

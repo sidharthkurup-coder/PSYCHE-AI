@@ -185,4 +185,16 @@ def test_timeline_chronology_open_loops_resolution_and_pattern_shift() -> None:
     assert "രാവിലെ പറ്റുമോ" in open_questions[0]["description"]
     assert len(open_commitments) >= 1
     assert "vilikkam" in open_commitments[0]["description"]
+
+    # Dismiss open commitment and verify loop_id and DISMISSED_BY_USER status survive re-runs
+    target_loop_id = open_commitments[0]["loop_id"]
+    timeline.dismiss_open_loop(target_loop_id)
+    state_rerun = timeline.process_conversation_events(
+        person_id=person_id,
+        conversation_key=conv_key,
+        reference_now_utc="2026-11-14T16:20:00Z",
+    )
+    matching = [l for l in state_rerun["open_loops"] if l["loop_id"] == target_loop_id]
+    assert len(matching) == 1
+    assert matching[0]["status"] == "DISMISSED_BY_USER"
     db.close()
