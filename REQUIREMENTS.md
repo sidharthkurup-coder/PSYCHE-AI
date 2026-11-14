@@ -60,16 +60,16 @@
 
 ---
 
-## 5. Two-Laptop Platform & Functional Requirements
+## 5. Unified Single-Laptop (`Legion 5 Pro`) Full-Stack Platform & Functional Requirements
 
-### 5.1 Lenovo LOQ — Android & Mobile QA Responsibilities (`REQ-AND-*`)
+### 5.1 Android Companion & Cryptographic Simulator Responsibilities (`REQ-AND-*` — `/android-app/`, `/android_app_simulator/`)
 - **`REQ-AND-01 (Notification Acquisition)`**: Capture incoming messaging notifications via Android `NotificationListenerService`, extracting sender metadata, conversation/group context, timestamps, and verbatim message text while deduplicating summary updates.
 - **`REQ-AND-02 (Contact Identification)`**: Resolve notification senders against Android `ContactsContract`, normalize phone numbers (salted SHA-256 / E.164), and sync contact alias candidates to `PEOPLE AND MEMORY`.
 - **`REQ-AND-03 (Android Security & Permissions)`**: Enforce principle of least privilege, user-configurable app allowlists, automatic exclusion of OTP/banking alerts, and Android Keystore hardware-backed encryption for offline queues.
 - **`REQ-AND-04 (Encrypted Companion Sync)`**: Implement mTLS 1.3 + QR/SAS pairing and reliable batch synchronization (`contracts/v1/notification_ingest.schema.json`, `contracts/v1/contact_sync.schema.json`) with the Windows Companion.
-- **`REQ-AND-05 (Multilingual Evaluation & Device QA)`**: Maintain and execute on-device and emulator QA suites covering all 7 language modes, code-mixing, and edge-case notification formats.
+- **`REQ-AND-05 (Multilingual Evaluation & Device QA)`**: Maintain and execute QA suites (`eval_multilingual/`, `tests/test_phase6_android_companion_and_simulator.py`) covering all 7 language modes, code-mixing, and edge-case notification formats.
 
-### 5.2 Legion 5 Pro — Primary Orchestrator & Windows Companion Responsibilities (`REQ-WIN-*` / `REQ-AI-*`)
+### 5.2 Windows Companion, Gateway & Local AI Responsibilities (`REQ-WIN-*` / `REQ-AI-*`)
 - **`REQ-WIN-01 (Windows Desktop Companion)`**: Provide a native Windows 11 desktop application (`PySide6 6.12.0`) featuring live notification/timeline review, epistemic uncertainty & reality-check inspector, memory provenance/correction editor, and reply drafting studio.
 - **`REQ-WIN-02 (Zero Auto-Send Enforcement)`**: The Windows Companion and Android Companion must have **zero automated message-sending pathways**; user review and manual copy/confirm action is mandatory.
 - **`REQ-AI-01 (Local AI Execution & Benchmarking)`**: Execute primary reasoning and multilingual understanding locally on the Legion 5 Pro (Ryzen 7 260 + RTX 5050 8 GB VRAM) within a `6,600 MiB` VRAM ceiling.

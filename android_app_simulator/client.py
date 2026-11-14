@@ -468,10 +468,18 @@ class AndroidCompanionSimulator:
         return resp.json()
 
     def request_synthesis(
-        self, event_id: str, *, reference_now_utc: str | None = None
+        self,
+        event_id: str,
+        *,
+        user_explicit_assumption: str | None = None,
+        reference_now_utc: str | None = None,
     ) -> dict[str, Any]:
         """Requests an IntelligenceSynthesisPacket for an ingested event via Gateway."""
-        body = {"reference_now_utc": reference_now_utc} if reference_now_utc else {}
+        body: dict[str, Any] = {}
+        if user_explicit_assumption is not None:
+            body["user_explicit_assumption"] = user_explicit_assumption
+        if reference_now_utc is not None:
+            body["reference_now_utc"] = reference_now_utc
         resp = self.gateway.post(f"/v1/syntheses/{event_id}", json_body=body)
         if resp.status_code != 200:
             raise RuntimeError(

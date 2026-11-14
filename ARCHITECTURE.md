@@ -2,8 +2,8 @@
 
 > **Status**: Approved Baseline (`v1.0.0`)  
 > **Repository**: `https://github.com/sidharthkurup-coder/PSYCHE-AI.git` (Private Single Source of Truth)  
-> **Primary Orchestrator**: Lenovo Legion 5 Pro (Windows 11, Ryzen 7 260, RTX 5050 8 GB VRAM, 16 GB DDR5)  
-> **Secondary Parallel Machine**: Lenovo LOQ (Ryzen 7, 16 GB RAM — Android & Multilingual QA Domain)
+> **Primary Orchestrator & Unified Delivery Owner**: Lenovo Legion 5 Pro (Windows 11, Ryzen 7 260, RTX 5050 8 GB VRAM, 16 GB DDR5)  
+> **Unified Single-Machine Delivery Scope**: Windows Core Intelligence, Local AI Runtime, Multilingual Evaluation (`eval_multilingual/`), Desktop Companion (`windows_companion/`), Native Android Project (`android-app/`), and Cryptographic Android Simulator (`android_app_simulator/`).
 
 ---
 
@@ -41,7 +41,7 @@
 5. **`PSYCHE ECONOMY` (`/core/subsystems/economy/`)**: Compute, VRAM (`<= 6,600 MiB` on RTX 5050), RAM (`<= 2,500 MiB`), latency, and token governor managing model residency and gating any opt-in external provider calls.
 6. **`PSYCHE PRESENCE` (`/core/subsystems/presence/`)**: Cross-device ambient awareness engine tracking user activity across Android and Windows, focus/DND state, and notification urgency triage.
 7. **`PSYCHE FORTRESS` (`/core/subsystems/fortress/`)**: Zero-trust security subsystem enforcing mTLS 1.3 + QR/SAS pairing, DPAPI/Android Keystore encryption at rest, untrusted message sandboxing (prompt-injection firewall), and instant Panic Lock.
-8. **`Functionality and Quality Assurance` (`/tests/`, `/eval-multilingual/`)**: Continuous verification harness validating JSON schema contracts, 7-mode multilingual fidelity, memory integrity recovery, and anti-sycophancy compliance.
+8. **`Functionality and Quality Assurance` (`/tests/`, `/eval_multilingual/`)**: Continuous verification harness validating JSON schema contracts, 7-mode multilingual fidelity, memory integrity recovery, and anti-sycophancy compliance.
 
 ---
 
@@ -170,7 +170,7 @@ All technology selections have been validated against the inspected hardware and
 
 | Layer | Approved Technology | Compatibility & Engineering Justification |
 | :--- | :--- | :--- |
-| **Android Companion (LOQ)** | **Native Kotlin + Jetpack Compose** | Direct access to `NotificationListenerService`, `ContactsContract`, and Android Hardware `Keystore` without fragile cross-platform background service bridges. |
+| **Android Companion** | **Native Kotlin + Jetpack Compose + Cryptographic Python Simulator** | `android-app/` provides direct access to `NotificationListenerService`, `ContactsContract`, and Android Hardware `Keystore`; `android_app_simulator/` exercises live mTLS/Ed25519 gateway flows end-to-end. |
 | **Windows Companion UI (Legion)** | **PySide6 `6.12.0` (Qt6 + WebEngine)** | Verified pre-installed on Legion 5 Pro (`Python 3.14.5`). Avoids Rust/MSVC build dependencies (`Tauri`) and Chromium RAM bloat (`Electron`). |
 | **Local Service Backend (Legion)** | **Starlette `1.8.0` + Uvicorn `0.54.0` + Websockets `17.2` + `jsonschema 4.26.0`** | Verified pre-installed on `Python 3.14.5`. Provides async HTTPS/mTLS + WebSocket ingestion and strict JSON schema validation out of the box. |
 | **Local AI Inference Runtime** | **Standalone `llama-server.exe` (`llama.cpp` official prebuilt binary)** | Decouples LLM inference from `Python 3.14.5` (`cp314`) C-extension wheel incompatibilities. Communicates over localhost HTTP (`127.0.0.1:8089`) with grammar-constrained JSON output. |
@@ -181,25 +181,28 @@ All technology selections have been validated against the inspected hardware and
 
 ---
 
-## 8. Two-Laptop Ownership & Repository Governance
+## 8. Repository Structure & Ownership Governance (Unified Legion 5 Pro Delivery)
 
-### 8.1 Monorepo Directory Ownership (`PSYCHE-AI`)
+### 8.1 Monorepo Directory Structure (`PSYCHE-AI`)
 ```text
 PSYCHE-AI/
-├── ARCHITECTURE.md                  # [Legion 5 Pro] Master System Architecture
-├── REQUIREMENTS.md                  # [Legion 5 Pro] Requirements & Traceability Matrix
-├── DATA_MODEL.md                    # [Legion 5 Pro] Database, Provenance & Vector Schema
-├── SECURITY.md                      # [Legion 5 Pro] PSYCHE FORTRESS Threat Model & Security Spec
+├── ARCHITECTURE.md                  # Master System Architecture
+├── REQUIREMENTS.md                  # Requirements & Traceability Matrix
+├── DATA_MODEL.md                    # Database, Provenance & Vector Schema
+├── SECURITY.md                      # PSYCHE FORTRESS Threat Model & Security Spec
+├── INSTALL_AND_OPERATIONS.md        # Setup, Security & Runtime Operations Runbook
 ├── contracts/
-│   └── v1/                          # [Legion 5 Pro Owns / Lenovo LOQ Consumes] Shared JSON Schemas & API Spec
-├── core/                            # [Legion 5 Pro] 6 Pillars, 8 Subsystems, 5 Safeguards, Multilingual Engine
-├── local-ai/                        # [Legion 5 Pro] llama.cpp Adapter, PSYCHE ECONOMY Governor, Benchmarks
-├── windows-companion/               # [Legion 5 Pro] PySide6 Desktop UI & mTLS Ingest Gateway
-├── android-app/                     # [Lenovo LOQ] Kotlin Android App, NotificationListener, Contacts, Sync
-├── eval-multilingual/               # [Shared] Golden Multilingual Test Corpora (LOQ: Mobile QA, Legion: LLM Eval)
-├── tests/                           # [Shared] Contract Conformance & Integration Tests
+│   └── v1/                          # Frozen Shared JSON Schemas & API Spec
+├── core/                            # 6 Pillars, 8 Subsystems, 5 Safeguards, Multilingual Engine
+├── local_ai/                        # PSYCHE ECONOMY / Multilingual Synthesis Benchmark Suite
+├── windows_companion/               # PySide6 Desktop UI (ui/) & mTLS 1.3 Ingest Gateway (gateway/)
+├── android-app/                     # Native Kotlin + Jetpack Compose Android Companion
+├── android_app_simulator/           # Cryptographic Python Android Companion Simulator
+├── eval_multilingual/               # 210-Case Golden Multilingual Test Corpus & Evaluator
+├── tests/                           # Contract Conformance, Security & E2E Vertical Slice Tests
 └── docs/
-    └── sync/                        # [Shared Per-File] LEGION_STATUS.md & LOQ_STATUS.md
+    ├── specs/                       # Phase 1–7 Architecture & Delivery Specifications
+    └── sync/                        # Verification & Progress Tracking (LEGION_STATUS.md)
 ```
 
 ### 8.2 Git Branching & Synchronization Rules
