@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/memory_record.schema.json",
+  "title": "PSYCHE AI Memory Integrity & Provenance Contract (v1.0.0)",
+  "description": "Schema for PEOPLE AND MEMORY and Memory Integrity Engine records, enforcing 4-tier epistemic classification, provenance, contradiction tracking, emotional quarantine, and non-destructive revisioning.",
+  "$defs": {
+    "ProvenanceRecord": {
+      "type": "object",
+      "required": [
+        "provenance_id",
+        "source_type",
+        "extractor_component",
+        "captured_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provenance_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "source_type": {
+          "type": "string",
+          "enum": [
+            "ANDROID_NOTIFICATION",
+            "USER_EXPLICIT_INPUT",
+            "USER_CORRECTION",
+            "TIMELINE_METRIC",
+            "PILLAR_INFERENCE",
+            "KNOWLEDGE_VAULT"
+          ]
+        },
+        "source_event_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UuidV7" },
+            { "type": "null" }
+          ]
+        },
+        "evidence_quote_verbatim": { "type": ["string", "null"] },
+        "extractor_component": { "type": "string", "minLength": 1 },
+        "model_identifier": { "type": ["string", "null"] },
+        "captured_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    },
+    "MemoryContradictionLink": {
+      "type": "object",
+      "required": [
+        "contradiction_id",
+        "conflicting_memory_id",
+        "conflict_description",
+        "severity",
+        "resolution_state",
+        "detected_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contradiction_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "conflicting_memory_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "conflict_description": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "resolution_state": {
+          "type": "string",
+          "enum": ["OPEN", "RESOLVED_BY_USER", "TEMPORAL_EVOLUTION", "COEXISTING_HYPOTHESES"]
+        },
+        "detected_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    },
+    "MemoryRecord": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "memory_id",
+        "memory_domain",
+        "epistemic_class",
+        "statement_text",
+        "original_language_mode",
+        "confidence_score",
+        "quarantine",
+        "lifecycle",
+        "provenance",
+        "contradictions",
+        "created_at_utc",
+        "updated_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "memory_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "person_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UuidV7" },
+            { "type": "null" }
+          ]
+        },
+        "memory_domain": {
+          "type": "string",
+          "enum": ["EPISODIC", "SEMANTIC", "RELATIONAL", "USER_MIND", "COMM_STRATEGY", "GOAL"]
+        },
+        "epistemic_class": { "$ref": "common.schema.json#/$defs/EpistemicClass" },
+        "statement_text": { "type": "string", "minLength": 1 },
+        "original_language_mode": { "$ref": "common.schema.json#/$defs/LanguageMode" },
+        "confidence_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "quarantine": {
+          "type": "object",
+          "required": ["status"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "$ref": "common.schema.json#/$defs/QuarantineStatus" },
+            "reason": { "type": ["string", "null"] },
+            "expires_at_utc": {
+              "oneOf": [
+                { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "required": ["status", "revision_number"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["ACTIVE", "SUPERSEDED", "RETRACTED_BY_USER", "DELETED"]
+            },
+            "revision_number": { "type": "integer", "minimum": 1 },
+            "supersedes_memory_id": {
+              "oneOf": [
+                { "$ref": "common.schema.json#/$defs/UuidV7" },
+                { "type": "null" }
+              ]
+            },
+            "superseded_by_memory_id": {
+              "oneOf": [
+                { "$ref": "common.schema.json#/$defs/UuidV7" },
+                { "type": "null" }
+              ]
+            },
+            "correction_note": { "type": ["string", "null"] }
+          }
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ProvenanceRecord" }
+        },
+        "contradictions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryContradictionLink" }
+        },
+        "created_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "updated_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    }
+  }
+}

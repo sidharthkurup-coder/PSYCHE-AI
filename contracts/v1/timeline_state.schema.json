@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/timeline_state.schema.json",
+  "title": "PSYCHE AI Conversation Timeline Engine Contract (v1.0.0)",
+  "description": "Tracks chronological interactions, unanswered questions, unresolved situations, communication pattern shifts, and strict separation of observed vs. inferred events.",
+  "$defs": {
+    "TimelineEvent": {
+      "type": "object",
+      "required": [
+        "timeline_event_id",
+        "event_nature",
+        "event_type",
+        "summary_text",
+        "confidence",
+        "occurred_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "timeline_event_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "source_event_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UuidV7" },
+            { "type": "null" }
+          ]
+        },
+        "event_nature": {
+          "type": "string",
+          "enum": ["OBSERVED_EVENT", "INFERRED_EVENT"],
+          "description": "Mandatory separation between directly observed communication events and inferred situational events."
+        },
+        "event_type": { "type": "string", "minLength": 1 },
+        "summary_text": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "occurred_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    },
+    "OpenLoopItem": {
+      "type": "object",
+      "required": [
+        "loop_id",
+        "source_event_id",
+        "loop_kind",
+        "description",
+        "opened_at_utc",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "loop_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "source_event_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "loop_kind": {
+          "type": "string",
+          "enum": [
+            "UNANSWERED_QUESTION_INBOUND",
+            "UNANSWERED_QUESTION_OUTBOUND",
+            "UNRESOLVED_COMMITMENT",
+            "UNRESOLVED_TENSION"
+          ]
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "opened_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "due_or_expected_at_utc": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+            { "type": "null" }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["OPEN", "RESOLVED", "EXPIRED", "DISMISSED_BY_USER"]
+        }
+      }
+    },
+    "CommunicationPatternShift": {
+      "type": "object",
+      "required": [
+        "anomaly_detected",
+        "window_days",
+        "median_inbound_reply_sec",
+        "median_outbound_reply_sec",
+        "initiation_ratio_user"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "anomaly_detected": { "type": "boolean" },
+        "window_days": { "type": "integer", "minimum": 1 },
+        "median_inbound_reply_sec": { "type": ["number", "null"], "minimum": 0 },
+        "median_outbound_reply_sec": { "type": ["number", "null"], "minimum": 0 },
+        "initiation_ratio_user": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "anomaly_description": { "type": ["string", "null"] }
+      }
+    },
+    "ConversationTimelineState": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "person_id",
+        "conversation_key",
+        "chronological_events",
+        "open_loops",
+        "pattern_shift",
+        "updated_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "person_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "conversation_key": { "type": "string", "minLength": 1 },
+        "chronological_events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TimelineEvent" }
+        },
+        "open_loops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OpenLoopItem" }
+        },
+        "pattern_shift": { "$ref": "#/$defs/CommunicationPatternShift" },
+        "updated_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    }
+  }
+}

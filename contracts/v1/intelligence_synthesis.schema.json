@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/intelligence_synthesis.schema.json",
+  "title": "PSYCHE AI Six-Pillar & Five-Safeguard Intelligence Synthesis Contract (v1.0.0)",
+  "description": "Authoritative output schema for PSYCHE AI contextual reasoning across all 6 Intelligence Pillars, 5 Mandatory Safeguards, and MODEL NEUTRALIZER AND IDENTITY LOCK. Enforces user review and prohibits automatic message transmission.",
+  "$defs": {
+    "AlternativeExplanation": {
+      "type": "object",
+      "required": ["hypothesis_id", "explanation", "plausibility_score", "supporting_evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "hypothesis_id": { "type": "string", "minLength": 1 },
+        "explanation": { "type": "string", "minLength": 1 },
+        "plausibility_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "supporting_evidence_ids": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/UuidV7" }
+        }
+      }
+    },
+    "ContextualUncertaintyAudit": {
+      "type": "object",
+      "required": [
+        "verified_facts",
+        "primary_interpretation",
+        "calibrated_confidence",
+        "verdict_status",
+        "alternative_explanations",
+        "contradictory_evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verified_facts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Strictly objective facts grounded in VERIFIED_FACT or OBSERVATION records."
+        },
+        "primary_interpretation": { "type": "string", "minLength": 1 },
+        "calibrated_confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "verdict_status": {
+          "type": "string",
+          "enum": ["HIGH_CONFIDENCE", "MODERATE_CONFIDENCE", "LOW_CONFIDENCE", "INCONCLUSIVE"],
+          "description": "Explicitly allows INCONCLUSIVE when evidence is insufficient."
+        },
+        "alternative_explanations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/AlternativeExplanation" }
+        },
+        "contradictory_evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "RealityCheckAudit": {
+      "type": "object",
+      "required": [
+        "challenged_user_assumptions",
+        "challenged_ai_assumptions",
+        "feelings_vs_facts_distinction",
+        "independent_thinking_prompt",
+        "sycophancy_guard_passed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "challenged_user_assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "challenged_ai_assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "feelings_vs_facts_distinction": { "type": "string", "minLength": 1 },
+        "independent_thinking_prompt": { "type": "string", "minLength": 1 },
+        "sycophancy_guard_passed": { "type": "boolean", "const": true }
+      }
+    },
+    "ReplyCandidate": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "strategy_label",
+        "target_language_modes",
+        "draft_text",
+        "english_meaning_gloss",
+        "comm_dna_match_score",
+        "model_neutralizer_passed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "strategy_label": { "type": "string", "minLength": 1 },
+        "target_language_modes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/LanguageMode" }
+        },
+        "draft_text": { "type": "string", "minLength": 1 },
+        "english_meaning_gloss": { "type": "string", "minLength": 1 },
+        "comm_dna_match_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "model_neutralizer_passed": { "type": "boolean", "const": true }
+      }
+    },
+    "IntelligenceSynthesisPacket": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "synthesis_id",
+        "trigger_event_id",
+        "person_id",
+        "pillar_assessments",
+        "uncertainty_audit",
+        "reality_check_audit",
+        "goal_aware_recommendations",
+        "neutralizer_audit",
+        "safety_execution_locks",
+        "created_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "synthesis_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "trigger_event_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "person_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UuidV7" },
+            { "type": "null" }
+          ]
+        },
+        "pillar_assessments": {
+          "type": "object",
+          "required": [
+            "human",
+            "reality",
+            "mind",
+            "communication_dna",
+            "people_and_memory",
+            "influence_and_mentor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "human": {
+              "type": "object",
+              "required": ["emotional_state_summary", "interpersonal_dynamic", "confidence"],
+              "additionalProperties": false,
+              "properties": {
+                "emotional_state_summary": { "type": "string" },
+                "interpersonal_dynamic": { "type": "string" },
+                "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+              }
+            },
+            "reality": {
+              "type": "object",
+              "required": ["literal_meaning", "pragmatic_subtext", "sarcasm_or_idiom_detected"],
+              "additionalProperties": false,
+              "properties": {
+                "literal_meaning": { "type": "string" },
+                "pragmatic_subtext": { "type": "string" },
+                "sarcasm_or_idiom_detected": { "type": "boolean" },
+                "idiom_or_colloquial_notes": { "type": ["string", "null"] }
+              }
+            },
+            "mind": {
+              "type": "object",
+              "required": ["user_goal_alignment", "cognitive_trigger_watch", "independent_reflection"],
+              "additionalProperties": false,
+              "properties": {
+                "user_goal_alignment": { "type": "string" },
+                "cognitive_trigger_watch": { "type": ["string", "null"] },
+                "independent_reflection": { "type": "string" }
+              }
+            },
+            "communication_dna": {
+              "type": "object",
+              "required": ["recommended_language_modes", "formality_target", "style_constraints"],
+              "additionalProperties": false,
+              "properties": {
+                "recommended_language_modes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "$ref": "common.schema.json#/$defs/LanguageMode" }
+                },
+                "formality_target": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                "style_constraints": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "people_and_memory": {
+              "type": "object",
+              "required": ["relationship_tier", "retrieved_memory_ids", "open_loop_ids", "active_contradiction_ids"],
+              "additionalProperties": false,
+              "properties": {
+                "relationship_tier": { "$ref": "common.schema.json#/$defs/RelationshipTier" },
+                "retrieved_memory_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/UuidV7" } },
+                "open_loop_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/UuidV7" } },
+                "active_contradiction_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/UuidV7" } }
+              }
+            },
+            "influence_and_mentor": {
+              "type": "object",
+              "required": ["strategic_recommendation", "boundary_guidance", "growth_insight"],
+              "additionalProperties": false,
+              "properties": {
+                "strategic_recommendation": { "type": "string" },
+                "boundary_guidance": { "type": "string" },
+                "growth_insight": { "type": "string" }
+              }
+            }
+          }
+        },
+        "uncertainty_audit": { "$ref": "#/$defs/ContextualUncertaintyAudit" },
+        "reality_check_audit": { "$ref": "#/$defs/RealityCheckAudit" },
+        "goal_aware_recommendations": {
+          "type": "object",
+          "required": [
+            "inferred_user_objective",
+            "clarification_needed",
+            "clarification_question",
+            "reply_candidates"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "inferred_user_objective": { "type": "string", "minLength": 1 },
+            "clarification_needed": { "type": "boolean" },
+            "clarification_question": {
+              "type": ["string", "null"],
+              "description": "Populated ONLY when missing context materially alters the response strategy."
+            },
+            "reply_candidates": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ReplyCandidate" }
+            }
+          }
+        },
+        "neutralizer_audit": {
+          "type": "object",
+          "required": ["ai_boilerplate_stripped", "identity_lock_verified"],
+          "additionalProperties": false,
+          "properties": {
+            "ai_boilerplate_stripped": { "type": "boolean", "const": true },
+            "identity_lock_verified": { "type": "boolean", "const": true }
+          }
+        },
+        "safety_execution_locks": {
+          "type": "object",
+          "required": ["requires_user_review", "auto_send_permitted", "processed_locally"],
+          "additionalProperties": false,
+          "properties": {
+            "requires_user_review": { "type": "boolean", "const": true },
+            "auto_send_permitted": { "type": "boolean", "const": false },
+            "processed_locally": { "type": "boolean" }
+          }
+        },
+        "created_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    }
+  }
+}

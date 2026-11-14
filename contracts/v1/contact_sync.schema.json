@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/contact_sync.schema.json",
+  "title": "PSYCHE AI Contact Identification & Cross-Script Alias Sync Contract (v1.0.0)",
+  "description": "Synchronizes Android ContactsContract entries and cross-script name aliases (en, hi-Latn/Deva, ml-Latn/Mlym, te-Latn/Telu) with PEOPLE AND MEMORY on the Legion 5 Pro.",
+  "$defs": {
+    "ContactAliasEntry": {
+      "type": "object",
+      "required": ["alias_text", "language_mode", "match_confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "alias_text": { "type": "string", "minLength": 1 },
+        "language_mode": { "$ref": "common.schema.json#/$defs/LanguageMode" },
+        "platform_package": { "type": ["string", "null"] },
+        "match_confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      }
+    },
+    "AndroidContactRecord": {
+      "type": "object",
+      "required": [
+        "android_contact_lookup_key",
+        "display_name",
+        "normalized_phone_hashes",
+        "aliases",
+        "updated_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "android_contact_lookup_key": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "normalized_phone_hashes": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Sha256Hex" }
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContactAliasEntry" }
+        },
+        "starred_on_android": { "type": "boolean" },
+        "updated_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    },
+    "ContactSyncRequest": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "sync_batch_id",
+        "device_id",
+        "sent_at_utc",
+        "contacts",
+        "ed25519_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "sync_batch_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "device_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "sent_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "contacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/AndroidContactRecord" }
+        },
+        "ed25519_signature": { "$ref": "common.schema.json#/$defs/Base64Signature" }
+      }
+    },
+    "ContactSyncResponse": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "sync_batch_id",
+        "processed_at_utc",
+        "resolved_mappings",
+        "ambiguous_lookup_keys"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "sync_batch_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "processed_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "resolved_mappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["android_contact_lookup_key", "person_id", "relationship_tier"],
+            "additionalProperties": false,
+            "properties": {
+              "android_contact_lookup_key": { "type": "string" },
+              "person_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+              "relationship_tier": { "$ref": "common.schema.json#/$defs/RelationshipTier" }
+            }
+          }
+        },
+        "ambiguous_lookup_keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Contacts requiring user disambiguation due to colliding names/handles."
+        }
+      }
+    }
+  }
+}

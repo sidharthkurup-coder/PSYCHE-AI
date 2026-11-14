@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/device_pairing.schema.json",
+  "title": "PSYCHE FORTRESS Device Pairing Contract (v1.0.0)",
+  "description": "Out-of-band QR + 6-digit SAS mutual TLS 1.3 and Ed25519 key pinning handshake between Android Companion (Lenovo LOQ) and Windows Desktop Companion (Legion 5 Pro).",
+  "$defs": {
+    "QrChallengePayload": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "pairing_session_id",
+        "windows_host_endpoint",
+        "windows_tls_cert_sha256",
+        "windows_x25519_ephemeral_pub_b64",
+        "pairing_nonce_b64",
+        "expires_at_utc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "pairing_session_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "windows_host_endpoint": { "type": "string", "minLength": 1 },
+        "windows_tls_cert_sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "windows_x25519_ephemeral_pub_b64": { "type": "string", "minLength": 16 },
+        "pairing_nonce_b64": { "type": "string", "minLength": 16 },
+        "expires_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" }
+      }
+    },
+    "PairingConfirmRequest": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "pairing_session_id",
+        "device_id",
+        "device_name",
+        "android_ed25519_pub_b64",
+        "android_x25519_ephemeral_pub_b64",
+        "android_tls_cert_sha256",
+        "sas_verification_code_hmac_b64",
+        "requested_at_utc",
+        "ed25519_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "pairing_session_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "device_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "device_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "android_ed25519_pub_b64": { "type": "string", "minLength": 16 },
+        "android_x25519_ephemeral_pub_b64": { "type": "string", "minLength": 16 },
+        "android_tls_cert_sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "sas_verification_code_hmac_b64": { "type": "string", "minLength": 16 },
+        "requested_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "ed25519_signature": { "$ref": "common.schema.json#/$defs/Base64Signature" }
+      }
+    },
+    "PairingConfirmResponse": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "pairing_session_id",
+        "device_id",
+        "status",
+        "paired_at_utc",
+        "pinned_windows_tls_cert_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "pairing_session_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "device_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "status": { "type": "string", "enum": ["PAIRED", "REJECTED_SAS_MISMATCH", "EXPIRED"] },
+        "paired_at_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "pinned_windows_tls_cert_sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" }
+      }
+    }
+  }
+}

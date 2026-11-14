@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/presence_heartbeat.schema.json",
+  "title": "PSYCHE PRESENCE Cross-Device Heartbeat Contract (v1.0.0)",
+  "description": "Synchronizes ambient device availability, focus/DND state, and offline queue backlog between Android Companion (Lenovo LOQ) and Windows Desktop Companion (Legion 5 Pro).",
+  "$defs": {
+    "PresenceHeartbeatRequest": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "device_id",
+        "timestamp_utc",
+        "user_presence_state",
+        "dnd_active",
+        "pending_queue_count",
+        "ed25519_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "device_id": { "$ref": "common.schema.json#/$defs/UuidV7" },
+        "timestamp_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "user_presence_state": {
+          "type": "string",
+          "enum": ["ACTIVE_MOBILE", "IDLE_MOBILE", "DO_NOT_DISTURB", "SLEEPING"]
+        },
+        "dnd_active": { "type": "boolean" },
+        "pending_queue_count": { "type": "integer", "minimum": 0 },
+        "battery_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "ed25519_signature": { "$ref": "common.schema.json#/$defs/Base64Signature" }
+      }
+    },
+    "PresenceHeartbeatResponse": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "timestamp_utc",
+        "desktop_presence_state",
+        "recommended_sync_mode"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+        "timestamp_utc": { "$ref": "common.schema.json#/$defs/TimestampUtc" },
+        "desktop_presence_state": {
+          "type": "string",
+          "enum": ["ACTIVE_DESKTOP", "FOCUS_LOCKED", "IDLE_DESKTOP", "VAULT_LOCKED"]
+        },
+        "recommended_sync_mode": {
+          "type": "string",
+          "enum": ["REALTIME_STREAM", "BATCH_LOW_PRIORITY", "HOLD_UNTIL_UNLOCKED"]
+        }
+      }
+    }
+  }
+}

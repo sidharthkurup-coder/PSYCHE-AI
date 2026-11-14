@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psyche.local/contracts/v1/common.schema.json",
+  "title": "PSYCHE AI Common Contract Primitives (v1.0.0)",
+  "description": "Shared primitive types, strict 7-mode language enumerations, epistemic classifications, and cryptographic formats across Legion 5 Pro and Lenovo LOQ.",
+  "$defs": {
+    "SchemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "UuidV7": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Canonical UUID (UUIDv7 recommended for chronological ordering)."
+    },
+    "TimestampUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp (e.g., 2026-11-15T01:20:00Z)."
+    },
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Lowercase 64-character hex-encoded SHA-256 digest."
+    },
+    "Base64Signature": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Base64-encoded Ed25519 signature."
+    },
+    "LanguageMode": {
+      "type": "string",
+      "enum": [
+        "en",
+        "hi-Latn",
+        "hi-Deva",
+        "ml-Latn",
+        "ml-Mlym",
+        "te-Latn",
+        "te-Telu",
+        "out_of_scope"
+      ],
+      "description": "Strictly authorized 7 language/script modes plus explicit out_of_scope flag."
+    },
+    "TokenLanguageSpan": {
+      "type": "object",
+      "required": ["start_char", "end_char", "token_text", "language_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "start_char": { "type": "integer", "minimum": 0 },
+        "end_char": { "type": "integer", "minimum": 0 },
+        "token_text": { "type": "string", "minLength": 1 },
+        "language_mode": { "$ref": "#/$defs/LanguageMode" }
+      }
+    },
+    "EpistemicClass": {
+      "type": "string",
+      "enum": [
+        "VERIFIED_FACT",
+        "USER_REPORT",
+        "OBSERVATION",
+        "AI_HYPOTHESIS"
+      ],
+      "description": "Mandatory 4-tier epistemic classification enforced by Memory Integrity Engine."
+    },
+    "QuarantineStatus": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "EMOTIONAL_TRANSIENT",
+        "IDENTITY_AMBIGUOUS",
+        "SUSPECTED_INJECTION"
+      ],
+      "description": "Quarantine state preventing temporary emotions, ambiguous contacts, or prompt injections from corrupting permanent memory."
+    },
+    "RelationshipTier": {
+      "type": "string",
+      "enum": [
+        "INNER_CIRCLE",
+        "FAMILY",
+        "CLOSE_FRIEND",
+        "COLLEAGUE",
+        "ACQUAINTANCE",
+        "PROFESSIONAL_EXTERNAL",
+        "UNKNOWN"
+      ]
+    }
+  }
+}
