@@ -1,9 +1,9 @@
 # PSYCHE AI — Legion 5 Pro Synchronized Status Ledger
 
 > **Machine Owner**: Legion 5 Pro (Primary Architect, Orchestrator & Core Intelligence Owner)  
-> **Active Branch**: `legion/phase4-windows-gateway-mtls` (branched from verified `legion/phase3-core-fortress-presence-eval` @ `46b84c5`)  
+> **Active Branch**: `legion/phase5-windows-desktop-ui` (branched from verified `legion/phase4-windows-gateway-mtls` @ `043ed12`)  
 > **Protected Integration Branch**: `main` (Commit `06e9ed72c6eb8cbabb92552dc217915d94ad5e65`)  
-> **Last Updated**: `2026-11-15T03:27:30+05:30`
+> **Last Updated**: `2026-11-15T03:33:00+05:30`
 
 ---
 
@@ -103,7 +103,19 @@ Specification: [docs/specs/PHASE4_SPECIFICATION.md](../specs/PHASE4_SPECIFICATIO
 
 ---
 
-## 5. Coordination Notes for Unified Track
+## 5. Phase 5 — Windows 11 Desktop Companion UI (`windows_companion/ui/`) — COMPLETE & VERIFIED
+
+Specification: [docs/specs/PHASE5_SPECIFICATION.md](../specs/PHASE5_SPECIFICATION.md)
+
+| Milestone / Subsystem | Module Path | Status | Verification Summary |
+| :--- | :--- | :--- | :--- |
+| **5.1 PySide6 Desktop Companion Main Window** | `windows_companion/ui/app.py` | **COMPLETED & VERIFIED** | Contacts/groups workspace, chronological `OBSERVED_EVENT` timeline, open-loops dismissal, Memory Integrity ledger (quarantine release, v2 superseding correction, deletion), 6-Pillar/Uncertainty/Reality Check inspector, and Reply Review Studio (`requires_user_review=True`, `auto_send_permitted=False`, clipboard copy + `COMMUNICATION DNA` feedback) |
+| **5.2 Privacy Blur, Idle Timeout & Panic Lock** | `windows_companion/ui/app.py` | **COMPLETED & VERIFIED** | `mask_pii_text` privacy masking toggle, `QTimer` inactivity auto-lock, and one-click Emergency Panic Lock (`db.vault.panic_lock()` + locked overlay) |
+| **5.3 Headless PySide6 Offscreen UI Tests** | `tests/test_phase5_windows_desktop_ui.py` | **COMPLETED & VERIFIED** | Offline manual analysis, draft edit -> clipboard copy -> DNA reinforcement, quarantine release/correction/deletion, open-loop dismissal, privacy blur + panic lock; full suite **49/49 passed in 3.83s** |
+
+---
+
+## 6. Coordination Notes for Unified Track
 
 1. **Contract Conformance Unchanged & Ready**:
    - `/contracts/v1/*.schema.json` remains bit-for-bit identical to `origin/main` (`06e9ed7`).
