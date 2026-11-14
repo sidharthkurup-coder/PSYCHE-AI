@@ -203,6 +203,22 @@ class PsycheIntelligenceOrchestrator:
             pragmatics=prag,
             timeline_state=timeline_state,
         )
+        llama_parsed = (
+            local_res.structured_output.get("llama_parsed_json")
+            if not local_res.injection_detected
+            else None
+        )
+        if isinstance(llama_parsed, dict):
+            llm_subtext = str(llama_parsed.get("pragmatic_subtext") or "").strip()
+            if llm_subtext:
+                reality_assessment["pragmatic_subtext"] = (
+                    f"{reality_assessment['pragmatic_subtext']} [Local LLM Refinement: {llm_subtext}]"
+                )
+            llm_emotion = str(llama_parsed.get("emotional_state_summary") or "").strip()
+            if llm_emotion:
+                human_assessment["emotional_state_summary"] = (
+                    f"{human_assessment['emotional_state_summary']} [Local LLM Refinement: {llm_emotion}]"
+                )
         mind_assessment = self.mind_pillar.assess(
             pragmatics=prag,
             relationship_tier=relationship_tier,
@@ -285,6 +301,35 @@ class PsycheIntelligenceOrchestrator:
             raw_text=raw_text,
             signature_markers=learned_markers,
         )
+        if isinstance(llama_parsed, dict):
+            raw_llm_draft = str(llama_parsed.get("reply_draft_primary") or "").strip()
+            if raw_llm_draft:
+                clean_llm_draft, _ = self.goal_response_engine.neutralizer.neutralize_and_lock_draft(
+                    draft_text=raw_llm_draft,
+                    style_constraints=comm_dna_assessment["style_constraints"],
+                    transliteration_spelling_map=spelling_map,
+                )
+                if clean_llm_draft:
+                    llm_dna_score = self.comm_dna_pillar.score_candidate_authenticity(
+                        draft_text=clean_llm_draft,
+                        target_language_modes=comm_dna_assessment["recommended_language_modes"],
+                        formality_target=comm_dna_assessment["formality_target"],
+                        style_constraints=comm_dna_assessment["style_constraints"],
+                    )
+                    goal_recommendations["reply_candidates"].append(
+                        {
+                            "candidate_id": "R3_LLAMA",
+                            "strategy_label": "Local LLM Hybrid (Neutralized & DNA-Locked)",
+                            "target_language_modes": comm_dna_assessment["recommended_language_modes"],
+                            "draft_text": clean_llm_draft,
+                            "english_meaning_gloss": (
+                                f"Local LLM contextual reply draft calibrated to "
+                                f"{comm_dna_assessment['recommended_language_modes'][0]}."
+                            ),
+                            "comm_dna_match_score": llm_dna_score,
+                            "model_neutralizer_passed": True,
+                        }
+                    )
 
         now_iso = utc_now_iso()
         synthesis_id = generate_uuidv7()

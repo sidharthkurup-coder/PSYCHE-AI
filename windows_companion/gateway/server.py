@@ -39,6 +39,12 @@ class PsycheGatewayService:
         self.windows_tls_cert_sha256 = windows_tls_cert_sha256
         self.enforce_clock_skew = enforce_clock_skew
         self._ws_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._event_listeners: list[Any] = []
+
+    def register_event_listener(self, callback: Any) -> None:
+        """Registers an in-process Desktop UI listener for live Gateway events."""
+        if callback not in self._event_listeners:
+            self._event_listeners.append(callback)
 
     def _broadcast_event(self, event_type: str, payload: dict[str, Any]) -> None:
         message = {
@@ -48,6 +54,12 @@ class PsycheGatewayService:
         }
         for q in list(self._ws_subscribers):
             q.put_nowait(message)
+        for listener in list(self._event_listeners):
+            try:
+                listener(message)
+            except Exception:
+                # Listener UI errors must not break Gateway ingestion/synthesis paths.
+                pass
 
     @staticmethod
     def _error_response(status_code: int, error_code: str, message: str) -> JSONResponse:
@@ -193,6 +205,7 @@ class PsycheGatewayService:
                     "synthesis_id": packet["synthesis_id"],
                     "trigger_event_id": packet["trigger_event_id"],
                     "person_id": packet["person_id"],
+                    "packet": packet,
                 },
             )
             return JSONResponse(packet, status_code=200)

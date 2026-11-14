@@ -126,11 +126,13 @@ class PsycheDesktopMainWindow(QMainWindow):
         *,
         db: PsycheDatabase,
         orchestrator: PsycheIntelligenceOrchestrator | None = None,
+        gateway_service: Any | None = None,
         idle_timeout_ms: int = 300_000,
     ) -> None:
         super().__init__()
         self.db = db
         self.orchestrator = orchestrator or PsycheIntelligenceOrchestrator(db=db)
+        self.gateway_service = gateway_service
         self.privacy_blur_enabled: bool = False
         self.current_person_id: str | None = None
         self.current_synthesis_packet: dict[str, Any] | None = None
@@ -150,6 +152,11 @@ class PsycheDesktopMainWindow(QMainWindow):
         )
 
         self._build_ui()
+
+        if self.gateway_service is not None and hasattr(
+            self.gateway_service, "register_event_listener"
+        ):
+            self.gateway_service.register_event_listener(self._on_gateway_event)
 
         self.panic_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         self.panic_shortcut.activated.connect(self.trigger_panic_lock)
@@ -351,7 +358,28 @@ class PsycheDesktopMainWindow(QMainWindow):
             f"Privacy Blur: {'ON' if self.privacy_blur_enabled else 'OFF'}"
         )
         if not self.db.vault.is_locked:
+            saved_packet = self.current_synthesis_packet
             self.refresh_all()
+            if saved_packet is not None and self.current_synthesis_packet is saved_packet:
+                self.load_synthesis_packet(saved_packet)
+
+    def _on_gateway_event(self, event_msg: dict[str, Any]) -> None:
+        """Refreshes desktop panes automatically when Android Companion hits the Gateway."""
+        if self.db.vault.is_locked:
+            return
+        etype = event_msg.get("event_type")
+        payload = event_msg.get("payload", {})
+        if etype in {"CONTACTS_SYNCED", "NOTIFICATIONS_INGESTED", "SYNTHESIS_REVIEWED"}:
+            self.refresh_all()
+        elif etype == "SYNTHESIS_READY":
+            packet = payload.get("packet")
+            if isinstance(packet, dict):
+                if packet.get("person_id"):
+                    self.current_person_id = packet["person_id"]
+                self.refresh_all()
+                self.load_synthesis_packet(packet)
+            else:
+                self.refresh_all()
 
     def _on_vault_locked_callback(self) -> None:
         self._show_locked_overlay()
@@ -542,6 +570,26 @@ class PsycheDesktopMainWindow(QMainWindow):
     def load_synthesis_packet(self, packet: dict[str, Any]) -> None:
         """Populates all intelligence panes and Reply Review Studio from a verified packet."""
         self.current_synthesis_packet = packet
+
+        # Populate candidate combo box data cleanly (masked display when Privacy Blur is ON)
+        self.candidate_combo.blockSignals(True)
+        self.candidate_combo.clear()
+        candidates = packet["goal_aware_recommendations"].get("reply_candidates", [])
+        for cand in candidates:
+            s_label = cand.get("strategy_label", cand.get("tone_label", "Draft"))
+            dna_score = float(cand.get("comm_dna_match_score", cand.get("dna_authenticity_score", 0.0)))
+            label = f"{s_label} (DNA={dna_score:.2f})"
+            self.candidate_combo.addItem(label, cand)
+        self.candidate_combo.blockSignals(False)
+
+        if self.privacy_blur_enabled:
+            masked_msg = "[HIDDEN BY PRIVACY BLUR — SHA-256 VERIFIED]"
+            self.pillars_view.setPlainText(masked_msg)
+            self.uncertainty_view.setPlainText(masked_msg)
+            self.reality_check_view.setPlainText(masked_msg)
+            self.reply_editor.setPlainText(masked_msg)
+            return
+
         pillars = packet["pillar_assessments"]
         lines: list[str] = []
         for pname, pval in pillars.items():
@@ -551,7 +599,7 @@ class PsycheDesktopMainWindow(QMainWindow):
 
         unc = packet["uncertainty_audit"]
         unc_lines = [
-            f"VERDICT: {unc['verdict_status']}",
+            f"VERDICT: {unc['verdict_status']} (calibrated_confidence={float(unc.get('calibrated_confidence', 0.0)):.2f})",
             "",
             "VERIFIED FACTS:",
             *[f"  - {f}" for f in unc.get("verified_facts", [])],
@@ -561,9 +609,10 @@ class PsycheDesktopMainWindow(QMainWindow):
             "COMPETING ALTERNATIVE EXPLANATIONS:",
         ]
         for alt in unc.get("alternative_explanations", []):
-            unc_lines.append(
-                f"  - ({alt.get('confidence', 0.0):.2f}) {alt.get('hypothesis_text', '')}"
-            )
+            hid = alt.get("hypothesis_id", "H")
+            score = float(alt.get("plausibility_score", alt.get("confidence", 0.0)))
+            text = alt.get("explanation", alt.get("hypothesis_text", ""))
+            unc_lines.append(f"  - [{hid}] ({score:.2f}) {text}")
         if unc.get("contradictory_evidence"):
             unc_lines.append("")
             unc_lines.append("CONTRADICTORY EVIDENCE:")
@@ -572,30 +621,38 @@ class PsycheDesktopMainWindow(QMainWindow):
         self.uncertainty_view.setPlainText("\n".join(unc_lines))
 
         rc = packet["reality_check_audit"]
+        fvf_raw = rc.get("feelings_vs_facts_distinction")
+        if fvf_raw is None:
+            fvf_raw = rc.get("distinction_feelings_vs_facts", "")
+        if isinstance(fvf_raw, list):
+            fvf_block = [f"  - {item}" for item in fvf_raw]
+        else:
+            fvf_block = [f"  {fvf_raw}"]
+
         rc_lines = [
             f"SYCOPHANCY GUARD PASSED: {rc.get('sycophancy_guard_passed')}",
             "",
-            "CHALLENGED ASSUMPTIONS:",
+            "CHALLENGED USER ASSUMPTIONS:",
             *[f"  - {a}" for a in rc.get("challenged_user_assumptions", [])],
             "",
+            "CHALLENGED AI ASSUMPTIONS:",
+            *[f"  - {a}" for a in rc.get("challenged_ai_assumptions", [])],
+            "",
             "FEELINGS VS FACTS:",
-            *[f"  - {f}" for f in rc.get("distinction_feelings_vs_facts", [])],
+            *fvf_block,
+            "",
+            f"INDEPENDENT THINKING PROMPT: {rc.get('independent_thinking_prompt', '')}",
         ]
         self.reality_check_view.setPlainText("\n".join(rc_lines))
 
-        # Reply Review Studio
-        self.candidate_combo.blockSignals(True)
-        self.candidate_combo.clear()
-        candidates = packet["goal_aware_recommendations"].get("reply_candidates", [])
-        for cand in candidates:
-            label = f"{cand.get('tone_label', 'Draft')} (DNA={cand.get('dna_authenticity_score', 0.0):.2f})"
-            self.candidate_combo.addItem(label, cand)
-        self.candidate_combo.blockSignals(False)
         if candidates:
             self.candidate_combo.setCurrentIndex(0)
             self._on_candidate_selected(0)
 
     def _on_candidate_selected(self, idx: int) -> None:
+        if self.privacy_blur_enabled:
+            self.reply_editor.setPlainText("[HIDDEN BY PRIVACY BLUR — SHA-256 VERIFIED]")
+            return
         cand = self.candidate_combo.itemData(idx)
         if isinstance(cand, dict):
             self.reply_editor.setPlainText(cand.get("draft_text", ""))

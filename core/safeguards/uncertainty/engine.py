@@ -45,7 +45,13 @@ class ContextualUncertaintyEngine:
         for item in retrieved_memories:
             rec = item["memory_record"]
             mid = rec["memory_id"]
-            if rec["epistemic_class"] in {"VERIFIED_FACT", "OBSERVATION"}:
+            q_status = rec.get("quarantine", {}).get("status", "NONE")
+            if q_status != "NONE":
+                contradictory_evidence.append(
+                    f"Quarantined memory excluded from verified facts ({mid}, status={q_status}): "
+                    f"{rec['statement_text']}"
+                )
+            elif rec["epistemic_class"] in {"VERIFIED_FACT", "OBSERVATION"}:
                 verified_facts.append(f"[{rec['epistemic_class']}] {rec['statement_text']}")
                 if mid not in evidence_ids:
                     evidence_ids.append(mid)

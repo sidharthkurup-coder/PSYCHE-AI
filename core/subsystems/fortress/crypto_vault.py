@@ -447,6 +447,8 @@ class PsycheFortressVault:
 
 
 # Adversarial Prompt-Injection Detection Patterns (SECURITY.md Section 2.6)
+_ZERO_WIDTH_CHAR_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
+
 _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
         r"\b(?:ignore|disregard|override|forget)\s+(?:all\s+)?(?:previous|prior|above|system)\s+"
@@ -459,13 +461,29 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE,
     ),
     re.compile(r"</?\s*untrusted_external_message", re.IGNORECASE),
+    re.compile(
+        r"(?:<\|im_start\|>\s*(?:system|developer)|<\|system\|>|^\s*\[system\]\s*:|"
+        r"^\s*###\s*(?:system|instruction)\b)",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    re.compile(
+        r"\b(?:requires_user_review\s*[:=]\s*false|relationship_tier\s*[:=]|"
+        r"trust_level\s*[:=]\s*1\.0|auto_send_permitted\s*[:=]\s*true)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:dump|exfiltrate|reveal|print)\s+(?:all\s+)?(?:memories|memory_ledger|"
+        r"knowledge_vault|master_key|vault\s+keys?)\b",
+        re.IGNORECASE,
+    ),
 )
 
 
 def detect_prompt_injection_attempt(raw_text: str) -> tuple[bool, str | None]:
     """Inspects untrusted message text for adversarial prompt-injection directives."""
+    normalized_text = _ZERO_WIDTH_CHAR_RE.sub("", raw_text or "")
     for pat in _INJECTION_PATTERNS:
-        match = pat.search(raw_text)
+        match = pat.search(normalized_text)
         if match:
             return True, f"Detected adversarial instruction override pattern: '{match.group(0)}'"
     return False, None

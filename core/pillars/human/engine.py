@@ -69,11 +69,16 @@ class HumanPillarEngine:
             f"{cue_summary}{anomaly_note}"
         ).strip()
 
-        # Confidence calibration: higher when corroborated by retrieved memories, capped when ambiguous
+        # Confidence calibration: higher when corroborated by non-quarantined retrieved memories
+        non_quarantined_memories = [
+            m
+            for m in retrieved_memories
+            if m.get("memory_record", {}).get("quarantine", {}).get("status", "NONE") == "NONE"
+        ]
         base_conf = 0.72
-        if len(retrieved_memories) >= 2:
+        if len(non_quarantined_memories) >= 2:
             base_conf += 0.12
-        elif len(retrieved_memories) == 1:
+        elif len(non_quarantined_memories) == 1:
             base_conf += 0.06
         if pragmatics.sarcasm_detected or pragmatics.acute_venting_detected:
             base_conf -= 0.08

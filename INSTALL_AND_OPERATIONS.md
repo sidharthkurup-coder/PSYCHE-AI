@@ -46,31 +46,42 @@ python -c "from local_ai.benchmark import run_multilingual_benchmark; print(run_
 
 ## 3. Windows 11 Desktop Companion UI (`windows_companion/ui/app.py`)
 
-- Launch the desktop window using `launch_desktop_companion(db=db)` or embed `PsycheDesktopMainWindow(db=db)`.
+- Launch the desktop window using `launch_desktop_companion(db=db)` or embed `PsycheDesktopMainWindow(db=db, orchestrator=service.orchestrator, gateway_service=service)`. Passing `gateway_service` registers an automatic live event listener so incoming Android syncs, ingested notifications, and new syntheses update all desktop panes without manual reloads.
 - Key operator controls:
-  - **Privacy Blur Toggle**: Masks contact names, timeline text, open loops, and memories via `mask_pii_text`.
+  - **Privacy Blur Toggle**: Masks contact names, detail headers, timeline text, open loops, memories, `pillars_view`, `uncertainty_view`, `reality_check_view`, and `reply_editor` via `mask_pii_text` and `[HIDDEN BY PRIVACY BLUR — SHA-256 VERIFIED]`.
   - **Idle Timeout Auto-Lock**: Configurable `QTimer` automatically locks the vault and displays the locked overlay after inactivity.
-  - **Memory Integrity Ledger**: Release `EMOTIONAL_TRANSIENT` quarantine after review, create superseding `v2` corrections without destroying provenance, or delete a memory (zeroizing vectors).
-  - **Reply Review Studio**: Always enforces `requires_user_review = True` and `auto_send_permitted = False`. Editing and clicking `Approve / Edit & Copy to Clipboard` updates `COMMUNICATION DNA` and copies to clipboard for manual pasting.
+  - **Memory Integrity Ledger**: Release `EMOTIONAL_TRANSIENT` quarantine after review, create superseding `v2` corrections without destroying provenance, or delete a memory (zeroizing vectors). Quarantined records (`EMOTIONAL_TRANSIENT`, `IDENTITY_AMBIGUOUS`, `SUSPECTED_INJECTION`) are isolated from unquarantined `verified_facts` and confidence boosts.
+  - **Reply Review Studio**: Always enforces `requires_user_review = True` and `auto_send_permitted = False`. Renders competing alternative explanations (`hypothesis_id`, `plausibility_score`, `explanation`), reality check prompts (`feelings_vs_facts_distinction`, `challenged_ai_assumptions`, `independent_thinking_prompt`), and strategy-labeled candidates (`strategy_label`, `comm_dna_match_score`). Editing and clicking `Approve / Edit & Copy to Clipboard` updates `COMMUNICATION DNA` and copies to clipboard for manual pasting.
   - **EMERGENCY PANIC LOCK**: Immediately calls `db.vault.panic_lock()`, zeroes key buffers and RAM vector arrays (`0.0`), hides UI contents, and causes the Gateway to return `423 VAULT_LOCKED`.
 
 ---
 
 ## 4. Local AI Runtime & Optional GGUF LLM Upgrade (`core/subsystems/local_core/runtime.py`)
 
-- **Default Tier-0 Engine (Active Offline)**: `local/psyche-analytical-core-v1` runs in-process at `< 50 ms` latency with `$0.00` cloud spend and `external_providers_enabled = False`.
+- **Default Tier-0 Engine (Active Offline)**: `local/psyche-analytical-core-v1` runs in-process at `~15.7 ms` mean latency (`max ~60.3 ms`) with `47.95 MiB` RSS, `$0.00` cloud spend, and `external_providers_enabled = False`.
 - **Optional Tier-1/Tier-2 `llama-server.exe` Upgrade**:
-  - Evaluated candidate GGUF models for the RTX 5050 (`8,151 MiB` total VRAM, `6,600 MiB` PSYCHE cap):
-    - Primary: `Qwen2.5-7B-Instruct-Q4_K_M` (`4,680 MiB` weights + `900 MiB` KV cache)
-    - Secondary fast tier: `Qwen2.5-3B-Instruct-Q4_K_M` (`2,050 MiB` weights + `450 MiB` KV cache)
-  - Note: `.gguf` downloads remain `PENDING_OWNER_APPROVAL`. Once approved and downloaded locally outside the repo, start `llama-server.exe` bound strictly to `http://127.0.0.1:8089`.
+  - Loopback connections (`http://127.0.0.1:8089`) explicitly bypass Windows HTTP proxies using `urllib.request.ProxyHandler({})` (`_LOOPBACK_OPENER`), and skip local LLM inference whenever `detect_prompt_injection_attempt` flags untrusted input.
+  - When `prefer_llama_server_if_online=True` and a loopback `/v1/chat/completions` JSON response is returned, `PsycheIntelligenceOrchestrator` refines `pragmatic_subtext` and `emotional_state_summary` and neutralizes any `R3_LLAMA` reply candidate through `ModelNeutralizerAndIdentityLock` and `CommunicationDnaPillarEngine`.
+  - Evaluated candidate GGUF models for the RTX 5050 (`8,151 MiB` total VRAM, `~6,434 MiB` free VRAM, `6,600 MiB` PSYCHE cap, `16 GB` RAM):
+    - Primary Tier-2: `Qwen2.5-7B-Instruct-Q4_K_M` (`4,680 MiB` weights + `900 MiB` KV cache = `5,580 MiB` VRAM, `620 MiB` system RAM overhead, `~793–854 MiB` VRAM headroom)
+    - Secondary Fast Tier-1: `Qwen2.5-3B-Instruct-Q4_K_M` (`2,050 MiB` weights + `450 MiB` KV cache = `2,500 MiB` VRAM, `350 MiB` RAM)
+  - Note: Both `llama-server.exe` and `.gguf` model weights remain `PENDING_OWNER_APPROVAL` and are not downloaded automatically.
 
 ---
 
-## 5. Android Companion App (`android-app/`) & Cryptographic Simulator (`android_app_simulator/`)
+## 5. Android Companion App (`android-app/`), Simulator (`android_app_simulator/`) & Known Limitations
 
 - **Cryptographic Python Simulator**: `android_app_simulator.AndroidCompanionSimulator` performs real X25519 ECDH, 6-digit SAS verification, Ed25519 signing, pre-persistence OTP filtering, and AES-256-GCM encrypted SQLite queueing (`HOLD_UNTIL_UNLOCKED` on `423`/`503 VAULT_LOCKED`).
 - **Native Kotlin + Jetpack Compose Project (`android-app/`)**:
   - Static security audit runs in `tests/test_phase6_android_companion_and_simulator.py`.
-  - To compile an `.apk` on Android build tooling, install JDK 17 + Android SDK Platform 35 + Android Gradle Plugin `8.7.2` and run `./gradlew assembleDebug` inside `android-app/`.
   - Forbidden permissions (`SEND_SMS`, `READ_SMS`, `CALL_PHONE`, `BIND_ACCESSIBILITY_SERVICE`) are excluded from `AndroidManifest.xml`, and `cleartextTrafficPermitted="false"` is enforced.
+  - **Missing Local Android Build Tooling (Owner Approval Required to Install)**: On this Legion 5 Pro environment, `java`/`javac` (JDK 17), `gradle` / `gradlew.bat`, and the Android SDK (`ANDROID_HOME`, `sdkmanager`, `adb`, Platform 35) are currently absent (`NOT_FOUND`), and `android-app/gradle/wrapper/` is not yet generated.
+  - Exact setup commands once approved (~1.8 GB total disk space + Gradle wrapper generation):
+    1. Install JDK 17 (~320 MB): `winget install --id Microsoft.OpenJDK.17 -e`
+    2. Install Android Studio Command-Line Tools (`cmdline-tools`) and SDK packages (~1.4 GB): `sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"`
+    3. Generate Gradle wrapper inside `android-app/` and build debug APK: `gradle wrapper --gradle-version 8.9 && .\gradlew.bat assembleDebug`
+- **Known Limitations**:
+  - Real `llama-server.exe` + `.gguf` neural inference weights are not downloaded or benchmarked against live transformer generation until owner approval is granted.
+  - Native Android `.apk` compilation and on-device `NotificationListenerService` verification on physical Android hardware remain pending JDK 17 / Android SDK setup and Gradle wrapper generation.
+  - `FortressKeystoreManager.kt` uses standard `KeyPairGenerator.getInstance("Ed25519")` / `"X25519"`, which natively targets Android API 33+ unless a compatibility provider is bundled for API 29–32 (`minSdk = 29`).
+  - No background OS Windows Service / tray daemon autostart script is registered yet; the Gateway and PySide6 Workbench launch programmatically (`launch_desktop_companion` / `create_gateway_app`).
