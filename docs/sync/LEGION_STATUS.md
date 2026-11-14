@@ -1,9 +1,9 @@
 # PSYCHE AI — Legion 5 Pro Synchronized Status Ledger
 
 > **Machine Owner**: Legion 5 Pro (Primary Architect, Orchestrator & Core Intelligence Owner)  
-> **Active Branch**: `legion/phase3-core-fortress-presence-eval` (branched from verified `legion/phase2-intelligence-local-core` @ `36ecbdc`)  
+> **Active Branch**: `legion/phase4-windows-gateway-mtls` (branched from verified `legion/phase3-core-fortress-presence-eval` @ `46b84c5`)  
 > **Protected Integration Branch**: `main` (Commit `06e9ed72c6eb8cbabb92552dc217915d94ad5e65`)  
-> **Last Updated**: `2026-11-15T03:15:00+05:30`
+> **Last Updated**: `2026-11-15T03:27:30+05:30`
 
 ---
 
@@ -91,7 +91,19 @@ Specification: [docs/specs/PHASE3_SPECIFICATION.md](../specs/PHASE3_SPECIFICATIO
 
 ---
 
-## 4. Coordination Notes for Lenovo LOQ (Android Track)
+## 4. Completed & Verified Phase 4 Milestones (`legion/phase4-windows-gateway-mtls`)
+
+Specification: [docs/specs/PHASE4_SPECIFICATION.md](../specs/PHASE4_SPECIFICATION.md)
+
+| Milestone / Subsystem | Module Path | Status | Verification Summary |
+| :--- | :--- | :--- | :--- |
+| **4.1 X.509 mTLS 1.3 Certificate Provisioning** | `windows_companion/gateway/mtls_certs.py` | **COMPLETED & VERIFIED** | OpenSSL ECDSA P-256 Root CA + Server/Client certs + DER SHA-256 pinning + strict `TLSv1_3` `CERT_REQUIRED` SSLContext |
+| **4.2 Starlette Local Gateway & WebSocket Stream** | `windows_companion/gateway/server.py` | **COMPLETED & VERIFIED** | `/v1/health`, `/v1/pair/init`, `/v1/pair/confirm`, `/v1/contacts/sync`, `/v1/notifications/ingest`, `/v1/presence/heartbeat`, `/v1/syntheses/*`, WebSocket `/v1/ws/events`, plus zero-dependency `AsgiTestClient` |
+| **4.3 Gateway Security & Replay Defense Tests** | `tests/test_phase4_windows_gateway_mtls.py` | **COMPLETED & VERIFIED** | Verifies `401` forged signature rejection, `409` replay/skew rejection, `423 VAULT_LOCKED` isolation, and heartbeat `HOLD_UNTIL_UNLOCKED`; full suite **46/46 passed in 3.07s** |
+
+---
+
+## 5. Coordination Notes for Unified Track
 
 1. **Contract Conformance Unchanged & Ready**:
    - `/contracts/v1/*.schema.json` remains bit-for-bit identical to `origin/main` (`06e9ed7`).
