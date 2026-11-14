@@ -1,0 +1,12 @@
+[project]
+name = "psyche-ai"
+version = "1.0.0"
+description = "PSYCHE AI — Private, local-first personal intelligence, relationship memory, and contextual reasoning system"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra -q"
